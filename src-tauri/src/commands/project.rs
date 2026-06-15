@@ -30,6 +30,12 @@ fn create_project_impl(name: String, path: String) -> Result<WikiProject, String
         "wiki/queries",
         "wiki/comparisons",
         "wiki/synthesis",
+        "wiki/bugs",
+        "wiki/decisions",
+        "wiki/howto",
+        "wiki/agent-errors",
+        "wiki/patterns",
+        "wiki/templates",
     ];
     for dir in &dirs {
         fs::create_dir_all(root.join(dir))
@@ -52,6 +58,12 @@ fn create_project_impl(name: String, path: String) -> Result<WikiProject, String
 | query | wiki/queries/ | Open questions under investigation |
 | comparison | wiki/comparisons/ | Side-by-side analysis of related entities |
 | synthesis | wiki/synthesis/ | Cross-cutting summaries and conclusions |
+| bug | wiki/bugs/ | Code/hardware defects: symptom → root cause → fix |
+| decision | wiki/decisions/ | Architecture/technology choices and rationale |
+| howto | wiki/howto/ | Repeatable operational procedures |
+| agent-error | wiki/agent-errors/ | Claude Code errors and corrections |
+| pattern | wiki/patterns/ | Recurring pitfalls: evidence list + prevention strategy |
+| template | wiki/templates/ | Reusable project checklists, scoped to a domain |
 
 ## Naming Conventions
 
@@ -71,6 +83,8 @@ type: entity | concept | source | query | comparison | synthesis | overview
 title: Human-readable title
 tags: []
 related: []
+project: ""
+domain: ""
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 ---
@@ -165,6 +179,18 @@ When sources contradict each other:
 ## Comparisons
 
 ## Synthesis
+
+## Bugs
+
+## Decisions
+
+## Howtos
+
+## Agent Errors
+
+## Patterns
+
+## Templates
 "#;
     write_file_inner(root.join("wiki/index.md"), index_content)?;
 

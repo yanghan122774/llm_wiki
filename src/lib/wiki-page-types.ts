@@ -20,6 +20,12 @@ const WIKI_TYPE_DIRS: Array<{ dir: string; type: string }> = [
   { dir: "findings", type: "finding" },
   { dir: "thesis", type: "thesis" },
   { dir: "methodology", type: "methodology" },
+  { dir: "bugs", type: "bug" },
+  { dir: "decisions", type: "decision" },
+  { dir: "howto", type: "howto" },
+  { dir: "agent-errors", type: "agent-error" },
+  { dir: "patterns", type: "pattern" },
+  { dir: "templates", type: "template" },
 ]
 
 export function inferWikiTypeFromPath(path: string, fileName?: string): string | null {
