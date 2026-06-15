@@ -1,145 +1,144 @@
-# Project Experience Accumulation System — Design Spec
+# 项目经验积累系统 — 设计文档
 
-**Date:** 2026-06-15
-**Status:** Draft
-**Context:** Transform llm_wiki into a system that automatically captures, structures, and retrieves project experience (pitfalls, bugs, decisions) across Claude Code sessions.
-
----
-
-## 1. Problem Statement
-
-### 1.1 Current State
-
-llm_wiki already has a working pipeline:
-
-- **SessionEnd Hook** → archives Claude Code transcripts as JSONL, converts to Markdown
-- **Source Watch** → detects new files in `raw/sources/`, triggers auto-ingest
-- **Ingest Pipeline** → MinerU/LLM analysis → FILE block parsing → wiki page generation → embedding → LanceDB
-- **Search** → BM25 + vector ANN with RRF fusion
-- **MCP Server** → 8 tools connecting Claude Code to llm_wiki API
-
-### 1.2 Gap
-
-| Current | Desired |
-|---------|---------|
-| Transcript is "archived", not analyzed | Transcript is mined for experience |
-| No project context — all pages are global | Each experience tagged with `project` + `domain` |
-| Global search only | Search weighted by project/domain affinity |
-| Passive — user must manually query | Active — auto-detects errors, preloads relevant experience at session start |
-| Generic ingest prompt | Experience-specific prompt for bug/decision/pattern extraction |
-
-### 1.3 Success Criteria
-
-1. After a Claude Code session, structured experience pages are automatically generated
-2. When Claude Code encounters an error, it proactively searches for related experience
-3. At session start, relevant past experience is loaded based on current project context
-4. Cross-project patterns are discovered when the same root cause appears ≥2 times
+**日期：** 2026-06-15
+**状态：** 草案
+**背景：** 将 llm_wiki 改造为能自动捕获、结构化存储、主动检索项目经验（踩坑、bug、决策）的系统，贯穿 Claude Code 会话全生命周期。
 
 ---
 
-## 2. Design Decisions
+## 一、问题陈述
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Trigger mechanism | All three: manual query + Stop Hook auto-detect + session start preload | Maximum coverage; each serves a different workflow |
-| Project granularity | Dual-layer: `project` (source repo) + `domain` (tech area) | Enables both project-specific and cross-project search |
-| Experience types | 6 types: bug, decision, howto, agent-error, **pattern**, **template** | pattern = repeated pitfall with evidence; template = reusable checklist |
-| Storage | Centralized — all experiences in one llm-wiki project, organized by frontmatter fields | Simpler management, cross-project search is natural |
-| Extraction | Auto-extract via script + manual `/exp` slash command | Automation for throughput, manual for precision |
-| Auto-detect trigger | Keyword matching on error output + model self-judgment | Fast first pass with semantic fallback |
-| Implementation order | Phase 1 (no code changes) → Phase 2 (experience ingest branch) → Phase 3 (pattern mining + weighted search, deferred) | Validate flow before touching core ingest pipeline |
+### 1.1 现状
+
+llm_wiki 已有一条完整的流水线：
+
+- **SessionEnd Hook** → 归档 Claude Code 会话 transcript 为 JSONL → 转 Markdown
+- **Source Watch** → 监控 `raw/sources/` 目录，检测新文件 → 触发自动 Ingest
+- **Ingest Pipeline** → MinerU/LLM 分析 → FILE 块解析 → wiki 页面生成 → 向量嵌入 → LanceDB
+- **Search** → BM25 关键词 + 向量 ANN，RRF 融合排序
+- **MCP Server** → 8 个工具，连接 Claude Code 与 llm_wiki API
+
+### 1.2 差距
+
+| 现状 | 目标 |
+|------|------|
+| Transcript 只做"归档"，不做分析提炼 | Transcript 被深度挖掘，提取结构化经验 |
+| 无项目上下文 — 所有页面全局共享 | 每条经验标注 `project`（来源项目）+ `domain`（技术领域） |
+| 搜索是全局的 | 搜索结果按项目/领域加权，靠近当前项目 |
+| 被动 — 用户必须手动查询 | 主动 — 碰到错误自动搜，会话启动预加载 |
+| 通用 Ingest prompt | 经验专用 prompt，专门提取 bug/decision/pattern |
+
+### 1.3 成功标准
+
+1. 每次 Claude Code 会话结束后，自动生成结构化经验页面
+2. Claude Code 碰到错误时，主动搜索知识库中的相关经验
+3. 会话启动时，根据当前项目上下文预加载相关经验
+4. 同一根因出现 ≥2 次时，自动发现跨项目模式
 
 ---
 
-## 3. Architecture Overview
+## 二、设计决策
+
+| 决策项 | 选择 | 理由 |
+|--------|------|------|
+| 触发机制 | 三层全要：手动查询 + Stop Hook 自动检测 + 会话启动预加载 | 各司其职，覆盖不同场景 |
+| 项目粒度 | 双层标注：`project`（来源仓库）+ `domain`（技术领域） | 兼顾项目内精确匹配和跨项目泛化搜索 |
+| 经验类型 | 六种：bug、decision、howto、agent-error、**pattern**（模式）、**template**（模板） | pattern = 重复出现的坑 + 证据链；template = 可复用的项目检查清单 |
+| 存储方式 | 集中式 — 所有经验存在同一个 llm-wiki 项目中，靠 frontmatter 字段区分 | 管理简单，跨项目搜索自然 |
+| 提炼方式 | 脚本自动提取 + 手动 `/exp` 命令 | 自动化保吞吐量，手动保精准度 |
+| 自动检测 | 关键词匹配（快）+ 模型自我判断（准） | 分层判断，不浪费 token |
+| 实施顺序 | 第一阶段（最小改动）→ 第二阶段（经验专用 Ingest）→ 第三阶段（模式挖掘+加权搜索，延后） | 先跑通流程验证价值，再深入改造核心管线 |
+
+---
+
+## 三、架构总览
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      Claude Code Session                         │
+│                      Claude Code 会话                             │
 │                                                                  │
-│  SessionStart ──► Preload relevant experience (by project/domain)│
+│  SessionStart ──► 预加载相关经验（按 project + domain）           │
 │       │                                                          │
 │       ▼                                                          │
-│  During session ──► Error detected? ──► Auto-search wiki via MCP │
+│  会话进行中 ──► 检测到错误？ ──► 通过 MCP 自动搜索知识库          │
 │       │                                                          │
 │       ▼                                                          │
-│  SessionEnd ──► Hook: archive transcript + extract experiences   │
+│  SessionEnd ──► Hook：归档 transcript + 提取经验                  │
 │       │                                                          │
 │       ▼                                                          │
-│  extract_experiences.py ──► LLM extracts structured experience   │
+│  extract_experiences.py ──► LLM 提取结构化经验                    │
 │       │                                                          │
 │       ▼                                                          │
-│  raw/sources/experiences/ ──► Source Watch detects new files     │
+│  raw/sources/experiences/ ──► Source Watch 检测到新文件            │
 │       │                                                          │
 │       ▼                                                          │
-│  Ingest Pipeline (Phase 2: experience branch)                    │
+│  Ingest Pipeline（第二阶段：经验分支）                              │
 │       │                                                          │
 │       ▼                                                          │
 │  wiki/bugs/ + wiki/decisions/ + wiki/patterns/ + ...             │
 │       │                                                          │
 │       ▼                                                          │
-│  Embedding → LanceDB → Search API (Phase 3: domain-weighted)     │
+│  向量嵌入 → LanceDB → 搜索 API（第三阶段：领域加权）               │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.1 Component Diagram
+### 3.1 组件关系图
 
 ```
 ┌──────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│ Claude Code  │───►│ extract_experien-│───►│ llm_wiki Ingest │
-│ SessionEnd   │    │ ces.py (new)     │    │ Pipeline        │
+│ Claude Code  │───►│ extract_experien-│───►│ llm_wiki        │
+│ SessionEnd   │    │ ces.py（新增）    │    │ Ingest Pipeline │
 │ Hook         │    │                  │    │                 │
-└──────────────┘    │ LLM call with    │    │ Phase 2:        │
-                     │ experience prompt│   │ experience-     │
+└──────────────┘    │ 用经验专用 prompt │    │ 第二阶段：      │
+                     │ 调用 LLM          │    │ experience-     │
 ┌──────────────┐    │                  │    │ prompt.ts       │
-│ Claude Code  │    │ Output → .md     │    │                 │
-│ SessionStart │    │ files in         │    │ Generate bug/   │
-│ Hook         │───►│ raw/sources/     │    │ decision/       │
-│              │    │ experiences/     │───►│ pattern pages   │
-│ Preload      │    └──────────────────┘    └────────┬────────┘
-│ relevant     │                                      │
-│ experience   │    ┌──────────────────┐              ▼
-└──────────────┘    │ sweep-patterns   │    ┌─────────────────┐
-                     │ .ts (Phase 3)   │◄───│ wiki/bugs/      │
-┌──────────────┐    │                  │    │ wiki/decisions/ │
-│ Claude Code  │    │ Cross-session    │    │ wiki/patterns/  │
-│ Error        │───►│ mining: same     │    │ wiki/templates/ │
-│ Detection    │    │ root cause ≥2    │    └────────┬────────┘
-│ (Stop Hook)  │    │ → auto pattern   │              │
-│              │    └──────────────────┘              ▼
-│ Auto-search  │                            ┌─────────────────┐
-│ MCP tool     │                            │ Search API      │
-└──────────────┘                            │ (Phase 3:       │
-                                             │ domain-weighted) │
+│ Claude Code  │    │ 输出 → .md 文件   │    │                 │
+│ SessionStart │    │ 放入 raw/sources/ │    │ 生成 bug/       │
+│ Hook         │───►│ experiences/     │───►│ decision/       │
+│              │    └──────────────────┘    │ pattern 页面     │
+│ 预加载相关   │                             └────────┬────────┘
+│ 经验         │    ┌──────────────────┐              │
+└──────────────┘    │ sweep-patterns   │              ▼
+                     │ .ts（第三阶段）  │    ┌─────────────────┐
+┌──────────────┐    │                  │◄───│ wiki/bugs/      │
+│ Claude Code  │    │ 跨会话模式挖掘： │    │ wiki/decisions/ │
+│ 错误检测     │───►│ 同一根因 ≥2 次   │    │ wiki/patterns/  │
+│ (Stop Hook)  │    │ → 自动创建       │    │ wiki/templates/ │
+│              │    │   pattern 页面    │    └────────┬────────┘
+│ 自动搜索     │    └──────────────────┘              │
+│ MCP 工具     │                            ┌────────┴────────┐
+└──────────────┘                            │ 搜索 API        │
+                                             │（第三阶段：     │
+                                             │ 领域加权排序）  │
                                              └─────────────────┘
 ```
 
 ---
 
-## 4. Phase 1 — Immediate (No Code Changes to llm_wiki)
+## 四、第一阶段 — 立即执行（llm_wiki 核心代码零改动）
 
-### 4.1 schema.md Changes
+### 4.1 schema.md 模板修改
 
-Add two new page types and two new frontmatter fields to the project template in `src-tauri/src/commands/project.rs`:
+修改 `src-tauri/src/commands/project.rs` 中的项目模板，新增两种页面类型和两个 frontmatter 字段。
 
-**New page types in the Page Types table:**
+**Page Types 表中新增：**
 
 ```markdown
 | Type | Directory | Purpose |
 |------|-----------|---------|
-| ... (existing types) |
-| bug | wiki/bugs/ | Code/hardware defects: symptom → root cause → fix |
-| decision | wiki/decisions/ | Architecture/technology choices with rationale |
-| howto | wiki/howto/ | Repeatable operational procedures |
-| agent-error | wiki/agent-errors/ | Claude Code mistakes and corrections |
-| pattern | wiki/patterns/ | Recurring pitfall: evidence list + prevention strategy |
-| template | wiki/templates/ | Reusable project checklist with domain scoping |
+| ... （已有类型不变） |
+| bug | wiki/bugs/ | 代码/硬件缺陷：现象 → 根因 → 修复 |
+| decision | wiki/decisions/ | 架构/技术选型及理由 |
+| howto | wiki/howto/ | 可重复执行的操作流程 |
+| agent-error | wiki/agent-errors/ | Claude Code 的错误及纠正方式 |
+| pattern | wiki/patterns/ | 重复出现的坑：证据列表 + 预防策略 |
+| template | wiki/templates/ | 可复用的项目检查清单，限定适用领域 |
 ```
 
-**New frontmatter fields:**
+**Frontmatter 新增字段：**
 
 ```yaml
-# Existing fields
+# 已有字段（不变）
 type: ...
 title: ...
 tags: []
@@ -147,122 +146,121 @@ related: []
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 
-# New fields (Phase 1)
-project: ""    # Source repo name, e.g. "smart-lock-firmware"
-domain: ""     # Tech area for cross-project search, e.g. "embedded-arm"
+# 第一阶段新增
+project: ""    # 来源项目名，如 "smart-lock-firmware"
+domain: ""     # 技术领域，用于跨项目搜索，如 "embedded-arm"
 ```
 
-**New directories created at project init:**
+**项目初始化时新增目录：**
 
 ```rust
 let dirs = [
-    // ... existing dirs
-    "wiki/bugs",          // ← existing, add if not present
-    "wiki/decisions",     // ← existing, add if not present
-    "wiki/howto",         // ← existing, add if not present
-    "wiki/agent-errors",  // ← existing, add if not present
-    "wiki/patterns",      // NEW
-    "wiki/templates",     // NEW
+    // ... 已有目录
+    "wiki/bugs",          // 已有，确认存在
+    "wiki/decisions",     // 已有，确认存在
+    "wiki/howto",         // 已有，确认存在
+    "wiki/agent-errors",  // 已有，确认存在
+    "wiki/patterns",      // 新增
+    "wiki/templates",     // 新增
 ];
 ```
 
-### 4.2 New Script: `extract_experiences.py`
+### 4.2 新脚本：`extract_experiences.py`
 
-Location: `tools/extract_experiences.py` (in llm-wiki-agent, copied to llm_wiki's tools/ for distribution)
+位置：`tools/extract_experiences.py`
 
-**Purpose:** Read a Claude Code transcript JSONL, call LLM with experience extraction prompt, output structured `.md` files to `raw/sources/experiences/`.
+**用途：** 读取 Claude Code 会话 transcript JSONL，用经验提取 prompt 调用 LLM，输出结构化 `.md` 文件到 `raw/sources/experiences/`。
 
-**Input:**
-- Transcript JSONL file path
-- Project name (e.g., `smart-lock-firmware`)
-- Domain (e.g., `embedded-arm`)
-- Optional: LLM API config (endpoint, key, model)
+**输入：**
+- Transcript JSONL 文件路径
+- 项目名（如 `smart-lock-firmware`）
+- 领域名（如 `embedded-arm`）
+- 可选：LLM API 配置（endpoint、key、model）
 
-**Output:**
-- One or more `.md` files written to `raw/sources/experiences/`
-- Each file has full YAML frontmatter with `type`, `project`, `domain`, `tags`
+**输出：**
+- 一份或多份 `.md` 文件，写入 `raw/sources/experiences/`
+- 每份文件包含完整 YAML frontmatter，含 `type`、`project`、`domain`、`tags`
 
-**Pipeline:**
+**处理流程：**
 
 ```
 JSONL transcript
     │
-    ├─ [1] Filter noise
-    │      Remove: thinking blocks, attachment events, system messages
-    │      Keep: user messages, assistant tool calls, error outputs
+    ├─ [1] 过滤噪音
+    │      移除：thinking 块、attachment 事件、系统消息
+    │      保留：用户消息、assistant 工具调用、错误输出
     │
-    ├─ [2] Chunk by topic
-    │      Split transcript into segments around distinct tasks/errors
+    ├─ [2] 按主题分块
+    │      按独立任务/错误将 transcript 切分为片段
     │
-    ├─ [3] LLM extraction call (per chunk)
-    │      Prompt: "Extract experiences from this conversation segment"
-    │      Schema: bug | decision | howto | agent-error | pattern | template
-    │      For each: title, symptom, root_cause, solution, prevention, tags
+    ├─ [3] LLM 经验提取（每块一次调用）
+    │      Prompt："从这个对话片段中提取项目经验"
+    │      Schema：bug | decision | howto | agent-error | pattern
+    │      每条：title、symptom、root_cause、solution、prevention、tags
     │
-    ├─ [4] Dedup against existing pages
-    │      Check wiki/bugs/, wiki/decisions/ etc. for similar title/content
-    │      Skip if already covered → log "no new findings"
+    ├─ [4] 与已有页面去重
+    │      检查 wiki/bugs/、wiki/decisions/ 等目录下相似标题/内容
+    │      已覆盖 → 跳过，记录 "no new findings"
     │
-    └─ [5] Write .md files
+    └─ [5] 写入 .md 文件
            raw/sources/experiences/YYYY-MM-DD-<slug>.md
-           Full frontmatter with type, project, domain, tags
+           完整 frontmatter 含 type、project、domain、tags
 ```
 
-**Experience extraction prompt (core):**
+**经验提取 Prompt（核心）：**
 
 ```
-You are analyzing a Claude Code conversation transcript to extract
-project experience. The project is "{project_name}" in the
-"{domain}" domain.
+你正在分析一段 Claude Code 对话 transcript，从中提取项目经验。
+当前项目："{project_name}"，所属领域："{domain}"。
 
-For each distinct experience you find, output a FILE block:
+对于每条你发现的经验，输出一个 FILE 块：
 
 ===FILE wiki/{type_dir}/{slug}.md
 ---
 type: {bug|decision|howto|agent-error|pattern}
-title: <concise one-line summary>
-tags: [<3-5 relevant tags>]
+title: <一句话概述>
+tags: [<3-5 个相关标签>]
 related: []
 project: "{project_name}"
 domain: "{domain}"
 created: {today}
 ---
 
-# <title>
+# <标题>
 
-## Symptom / Context
-<what happened, what was the user doing>
+## 现象 / 背景
+<发生了什么，用户在做什么>
 
-## Root Cause
-<the underlying issue>
+## 根因
+<底层原因>
 
-## Solution
-<how it was resolved>
+## 解决方案
+<如何解决的>
 
-## Prevention
-<how to avoid this in the future>
+## 预防措施
+<以后如何避免>
 ===END
 
-Types:
-- bug: code/hardware defect with clear symptom and fix
-- decision: architecture/technology choice with rationale
-- howto: repeatable procedure (commands, config steps)
-- agent-error: Claude Code mistake and correction
-- pattern: if this looks like a recurring pitfall, use type: pattern
-          and include an "Evidence" section listing related incidents
+类型说明：
+- bug：有明确现象和修复方案的代码/硬件缺陷
+- decision：有理由的架构/技术选型
+- howto：可重复的操作流程（命令、配置步骤）
+- agent-error：Claude Code 的错误及纠正方式
+- pattern：如果看起来是重复出现的坑，使用 pattern 类型，
+          并包含 "Evidence" 章节列出相关事件
 
-If the transcript contains no extractable experience, output:
+如果 transcript 中没有可提取的经验，输出：
 NO_EXPERIENCES
 ```
 
-### 4.3 Hook Integration
+### 4.3 Hook 集成
 
-#### SessionEnd Hook updates (`capture_session.py`)
+#### SessionEnd Hook 扩展（`capture_session.py`）
 
-After existing transcript archive + markdown conversion, add:
+在现有的 transcript 归档 + Markdown 转换之后，追加：
 
 ```python
-# NEW: Extract experiences from this session
+# 新增：从本次会话提取经验
 subprocess.run([
     sys.executable,
     "tools/extract_experiences.py",
@@ -272,37 +270,37 @@ subprocess.run([
 ])
 ```
 
-The `LLM_WIKI_PROJECT` and `LLM_WIKI_DOMAIN` env vars are configured per-project in Claude Code settings or CLAUDE.md.
+`LLM_WIKI_PROJECT` 和 `LLM_WIKI_DOMAIN` 通过各项目的 Claude Code 配置或 CLAUDE.md 设置。
 
-#### SessionStart Hook (new or extended)
-
-```
-On session start:
-1. Read LLM_WIKI_PROJECT and LLM_WIKI_DOMAIN from env/project config
-2. Call MCP llm_wiki_search with project + domain keywords
-3. Fetch top 5 most relevant experience pages
-4. Present summary to user: "Loaded 3 relevant experiences from this project"
-5. Keep experience titles + slugs in context for later reference
-```
-
-### 4.4 Stop Hook Error Detection
+#### SessionStart Hook（新建或扩展）
 
 ```
-On Stop (before SessionEnd):
-1. Check last N assistant messages for error patterns
-2. Error keywords: "error", "Error:", "failed", "panic", "exception",
-   "undefined is not", "Cannot", "ENOENT", "ECONNREFUSED", etc.
-3. If error detected:
-   a. Extract error message snippet
-   b. Call MCP llm_wiki_search with error keywords
-   c. If relevant experience found → inject into current context:
-      "⚠️ Wiki has relevant experience: [[PageName]] — {one-line summary}"
-   d. Log: whether experience was found, which page, whether model applied it
+会话启动时：
+1. 从环境变量/项目配置读取 LLM_WIKI_PROJECT 和 LLM_WIKI_DOMAIN
+2. 用 project + domain 关键词调用 MCP llm_wiki_search
+3. 获取 top 5 最相关的经验页面
+4. 向用户展示摘要："本项目有 3 条相关经验"
+5. 将经验标题和 slug 保持在上下文中，供后续参考
 ```
 
-### 4.5 Wiki Index Updates
+### 4.4 Stop Hook 错误检测
 
-`wiki/index.md` gets two new sections:
+```
+Stop 时（SessionEnd 之前）：
+1. 检查最后 N 条 assistant 消息，匹配错误模式
+2. 错误关键词："error"、"Error:"、"failed"、"panic"、"exception"、
+   "undefined is not"、"Cannot"、"ENOENT"、"ECONNREFUSED" 等
+3. 如果检测到错误：
+   a. 提取错误信息片段
+   b. 用错误关键词调用 MCP llm_wiki_search
+   c. 如果找到相关经验 → 注入当前上下文：
+      "⚠️ 知识库有相关经验：[[PageName]] — 一句话摘要"
+   d. 记录：是否找到经验、哪个页面、模型是否应用了该经验
+```
+
+### 4.5 Wiki Index 更新
+
+`wiki/index.md` 新增两个章节：
 
 ```markdown
 ## Patterns
@@ -310,82 +308,82 @@ On Stop (before SessionEnd):
 ## Templates
 ```
 
-### 4.6 Page Templates for New Types
+### 4.6 新类型的页面模板
 
-#### Pattern (`wiki/patterns/ExamplePattern.md`)
+#### Pattern 页面（`wiki/patterns/ExamplePattern.md`）
 
 ```markdown
 ---
 type: pattern
-title: <pattern name>
-tags: [<domain-tags>, <root-cause-tag>]
+title: <模式名称>
+tags: [<领域标签>, <根因标签>]
 related: []
-project: "<source project>"
-domain: "<tech domain>"
+project: "<来源项目>"
+domain: "<技术领域>"
 created: YYYY-MM-DD
 ---
 
-# <pattern name>
+# <模式名称>
 
-## Summary
-<One paragraph: what recurring pitfall this pattern describes>
+## 概述
+<一段话：这个模式描述了什么重复出现的坑>
 
-## Evidence
-- [[BugPage1]] — <brief description>
-- [[BugPage2]] — <brief description>
+## 证据
+- [[BugPage1]] — <简述>
+- [[BugPage2]] — <简述>
 
-## Root Cause Pattern
-<The common underlying cause across all evidence>
+## 根因模式
+<所有证据背后的共性根因>
 
-## Prevention Strategy
-<Concrete steps to avoid this pitfall in new projects>
+## 预防策略
+<新项目中避免此坑的具体步骤>
 
-## Detection Heuristics
-<What to look for — error messages, symptoms, configurations>
+## 检测特征
+<要注意什么 — 错误信息、症状、配置特征>
 ```
 
-#### Template (`wiki/templates/ExampleTemplate.md`)
+#### Template 页面（`wiki/templates/ExampleTemplate.md`）
 
 ```markdown
 ---
 type: template
-title: <template name>
-tags: [checklist, <domain>]
+title: <模板名称>
+tags: [checklist, <领域>]
 related: []
-project: "<source project>"
-domain: "<tech domain>"
+project: "<来源项目>"
+domain: "<技术领域>"
 created: YYYY-MM-DD
 ---
 
-# <template name>
+# <模板名称>
 
-## Applies To
-<What kind of project or task this template is for>
+## 适用范围
+<什么样的项目或任务适合使用此模板>
 
-## Prerequisites
-<What must be in place before using this template>
+## 前置条件
+<使用此模板前必须就绪的条件>
 
-## Steps / Checklist
+## 步骤 / 检查清单
 
-### 1. <Phase name>
-- [ ] <concrete item>
-- [ ] <concrete item>
+### 1. <阶段名>
+- [ ] <具体项>
+- [ ] <具体项>
 
-### 2. <Phase name>
-- [ ] <concrete item>
+### 2. <阶段名>
+- [ ] <具体项>
 
-## Common Pitfalls
-- [[PatternPage1]] — <brief description>
-- [[BugPage1]] — <brief description>
+## 常见坑点
+- [[PatternPage1]] — <简述>
+- [[BugPage1]] — <简述>
 ```
 
 ---
 
-## 5. Phase 2 — Experience-Specific Ingest Branch
+## 五、第二阶段 — 经验专用 Ingest 分支
 
-### 5.1 New File: `src/lib/experience-prompt.ts`
+### 5.1 新文件：`src/lib/experience-prompt.ts`
 
-A dedicated prompt builder for experience extraction, ~150 lines. Called when ingest detects the source is in a sessions/ or experiences/ directory.
+经验提取专用 prompt 构建器，约 150 行。当 Ingest 检测到源文件位于 `sessions/` 或 `experiences/` 目录时调用。
 
 ```typescript
 // experience-prompt.ts
@@ -394,7 +392,7 @@ interface ExperiencePromptConfig {
   project: string
   domain: string
   sourceFileName: string
-  existingPages: ExistingPageSummary[]
+  existingPages: ExistingPageSummary[]  // 已有经验页面列表，用于去重
 }
 
 interface ExistingPageSummary {
@@ -407,178 +405,173 @@ interface ExistingPageSummary {
 export function buildExperienceExtractionPrompt(
   config: ExperiencePromptConfig,
 ): string {
-  // Returns the full system + user prompt for experience extraction.
-  // Focused on: bug, decision, agent-error, pattern, template
-  // Does NOT extract: entity, concept, source, query, comparison, synthesis
+  // 返回经验提取的完整 system + user prompt
+  // 聚焦类型：bug, decision, agent-error, pattern, template
+  // 不提取：entity, concept, source, query, comparison, synthesis
   //
-  // Includes dedup hints: list of existing pages by title/type so the
-  // LLM can skip what's already covered.
+  // 包含去重提示：列出已有页面标题/类型，LLM 可跳过已覆盖内容
   //
-  // Structured output: FILE blocks with complete frontmatter.
+  // 结构化输出：完整 frontmatter 的 FILE 块
 }
 ```
 
-**Key differences from generic ingest prompt:**
+**与通用 Ingest Prompt 的关键差异：**
 
-| Aspect | Generic Prompt | Experience Prompt |
-|--------|---------------|-------------------|
-| Target types | entity, concept, source, query, comparison, synthesis | bug, decision, howto, agent-error, pattern, template |
-| Structure | General knowledge organization | Symptom→RootCause→Solution→Prevention |
-| Project context | Not included | `project` + `domain` in every page |
-| Dedup | Implicit | Explicit list of existing pages to avoid |
-| Noise tolerance | High (captures everything) | Low (only extract clear experience) |
+| 维度 | 通用 Prompt | 经验 Prompt |
+|------|------------|------------|
+| 目标类型 | entity, concept, source, query, comparison, synthesis | bug, decision, howto, agent-error, pattern, template |
+| 组织结构 | 通用知识组织 | 现象→根因→解决→预防 |
+| 项目上下文 | 不含 | 每条经验含 `project` + `domain` |
+| 去重方式 | 隐式（依赖后续 merge） | 显式提供已有页面列表 |
+| 噪音容忍度 | 高（尽量多捕获） | 低（只提取明确经验） |
 
-### 5.2 Changes to `src/lib/ingest.ts`
+### 5.2 `src/lib/ingest.ts` 改动
 
-Add a branch at the entry of the LLM analysis step (~line 800 in autoIngestImpl):
+在 `autoIngestImpl()` 的 LLM 分析步骤入口（约第 800 行）加入分支：
 
 ```typescript
-// Pseudo-code for the branch point in autoIngestImpl()
+// autoIngestImpl() 中的分支伪代码
 
 function selectPromptStrategy(sourcePath: string): 'generic' | 'experience' {
-  // Source files under sessions/ or experiences/ → experience prompt
+  // sessions/ 或 experiences/ 下的源文件 → 经验 prompt
   if (sourcePath.includes('/sessions/') || sourcePath.includes('/experiences/')) {
     return 'experience'
   }
   return 'generic'
 }
 
-// In autoIngestImpl(), replace the current single prompt with:
+// 在 autoIngestImpl() 中，替换当前的单一 prompt 为：
 const promptStrategy = selectPromptStrategy(sourceFilePath)
 if (promptStrategy === 'experience') {
   const config = await buildExperienceConfig(sourceFilePath, projectPath)
   systemPrompt = buildExperienceExtractionPrompt(config)
-  // Use lower token budget for focused extraction
-  tokenBudget = EXPERIENCE_EXTRACTION_BUDGET // ~4096 vs 8192 default
+  tokenBudget = EXPERIENCE_EXTRACTION_BUDGET  // ~4096，低于默认 8192
 } else {
-  // existing generic prompt
+  // 现有通用 prompt 逻辑
 }
 ```
 
-**Estimated change scope:** ~200 lines across `experience-prompt.ts` (new) + `ingest.ts` (branch + integration).
+**预估改动量：** 约 200 行，含 `experience-prompt.ts`（新文件）+ `ingest.ts`（分支集成）。
 
-### 5.3 Validation Gate for Phase 2
+### 5.3 第二阶段启动门槛
 
-Phase 2 is gated on:
+第二阶段需要满足以下条件后才执行：
 
-1. Phase 1 has been running for ≥2 weeks
-2. At least 10 experience pages generated via extract_experiences.py
-3. Review of generated page quality: are bug pages properly structured? Is dedup working?
-4. Confirmation that the generic ingest prompt is NOT producing good experience pages (which would make the experience-specific branch unnecessary)
+1. 第一阶段已运行 ≥ 2 周
+2. extract_experiences.py 已生成至少 10 条经验页面
+3. 人工审核页面质量：bug 页面结构是否正确？去重是否生效？
+4. 确认通用 Ingest prompt **不能**产出高质量经验页面（如果通用 prompt 已经足够好，经验专用分支就没有必要）
 
 ---
 
-## 6. Phase 3 — Cross-Session Pattern Mining + Weighted Search (Deferred)
+## 六、第三阶段 — 跨会话模式挖掘 + 加权搜索（延后执行）
 
-### 6.1 New File: `src/lib/sweep-patterns.ts`
+> **说明：** 第三阶段需要足够的数据积累才能生效，现阶段仅记录设计，待条件成熟后实施。
 
-**Trigger:** Post-ingest hook (or manual "Mine Patterns" button in UI).
+### 6.1 新文件：`src/lib/sweep-patterns.ts`
 
-**Logic:**
+**触发时机：** Ingest 完成后的钩子（或 UI 中的手动"挖掘模式"按钮）。
+
+**逻辑：**
 
 ```
 sweepPatterns(projectPath)
     │
-    ├─ [1] Gather all experience pages
-    │      Scan wiki/bugs/, wiki/decisions/, wiki/agent-errors/
-    │      Extract: tags, root_cause, solution_keywords
+    ├─ [1] 收集所有经验页面
+    │      扫描 wiki/bugs/、wiki/decisions/、wiki/agent-errors/
+    │      提取：tags、根因描述、解决方案关键词
     │
-    ├─ [2] Cluster by similarity
-    │      Compute pairwise similarity on: tags overlap, root cause
-    │      keyword overlap, domain match
-    │      Group pages with similarity > threshold into clusters
+    ├─ [2] 相似度聚类
+    │      两两计算相似度：tags 重叠度、根因关键词重叠、domain 匹配
+    │      相似度 > 阈值的页面归为一组
     │
-    ├─ [3] Generate pattern for clusters with ≥2 pages
-    │      For each qualifying cluster:
-    │        - Generate pattern title from common root cause
-    │        - Populate evidence list with [[links]] to cluster members
-    │        - LLM-generate prevention strategy
-    │        - Write to wiki/patterns/
+    ├─ [3] 对 ≥2 条页面的组生成 pattern
+    │      对每个符合条件的分组：
+    │        - 从共性根因生成 pattern 标题
+    │        - 用 [[wikilinks]] 填充 evidence 列表
+    │        - LLM 生成预防策略
+    │        - 写入 wiki/patterns/
     │
-    ├─ [4] Update index
-    │      Add pattern to wiki/index.md Patterns section
+    ├─ [4] 更新 index
+    │      在 wiki/index.md 的 Patterns 章节加入新条目
     │
-    └─ [5] Report
-           "Found 3 patterns from 8 bug pages across 2 projects"
+    └─ [5] 报告
+           "从 2 个项目的 8 条 bug 中发现 3 个模式"
 ```
 
-**Frequency:** Run per ingest, but pattern generation only triggers when new clusters form. Idempotent — re-running does not duplicate patterns.
+**执行频率：** 每次 Ingest 后运行，但只有新分组形成时才生成 pattern。幂等操作 — 重复运行不会产生重复页面。
 
-### 6.2 Changes to `src-tauri/src/commands/search.rs`
+### 6.2 `src-tauri/src/commands/search.rs` 改动
 
-Add optional weighting parameters to the search command:
+为搜索命令增加可选的加权参数：
 
 ```rust
-// New fields in search options
+// 搜索选项中新增字段
 pub struct SearchOptions {
-    // ... existing fields
-    pub prefer_project: Option<String>,  // boost results from this project
-    pub prefer_domain: Option<String>,   // boost results from this domain
+    // ... 已有字段
+    pub prefer_project: Option<String>,  // 提升此项目的搜索结果
+    pub prefer_domain: Option<String>,   // 提升此领域的搜索结果
 }
 ```
 
-**Weighting logic (post-RRF fusion):**
+**加权逻辑（在 RRF 融合之后执行）：**
 
 ```
-For each result:
-    base_score = RRF_fused_score
+对每条结果：
+    base_score = RRF 融合后的分数
 
-    if result.project == prefer_project:
+    如果 result.project == prefer_project：
         base_score *= 2.0
 
-    if result.domain == prefer_domain:
+    如果 result.domain == prefer_domain：
         base_score *= 1.5
 
-    if both match:
-        base_score *= 3.0   // 2.0 * 1.5
+    如果两者都匹配：
+        base_score *= 3.0   // 2.0 × 1.5
 
     final_score = base_score
 ```
 
-Results are re-sorted by final_score. No results are filtered out — cross-project/domain results are still visible, just lower-ranked.
+结果按 final_score 重新排序。不做过滤 — 跨项目、跨领域的结果仍然可见，只是排在后面。
 
 ### 6.3 Settings UI
 
-Add an "Experience System" section to the Settings panel in the React frontend:
+在 llm_wiki 的设置页面新增"经验系统"区域：
 
 ```
-Experience System
-├── ☐ Auto-extract experiences after each session
-├── ☐ Auto-mine patterns (cross-project pitfall detection)
-└── Default project: [________________]
-   Default domain:  [________________]
+经验系统 ──────────────────────────
+├── ☐ 会话结束后自动提炼经验
+├── ☐ 自动模式挖掘（跨项目发现重复问题）
+└── 默认项目：[________________]
+   默认领域：[________________]
 ```
 
-These settings are persisted to localStorage and exposed to hooks via env vars or MCP parameters.
+这些设置持久化到 localStorage，通过环境变量或 MCP 参数暴露给 Hook。
 
 ---
 
-## 7. CLAUDE.md / KB-Loader Integration
+## 七、CLAUDE.md / KB-Loader 集成
 
-### 7.1 SessionStart Preload (in KB-LOADER.md)
-
-Add a step to the KB-Loader startup sequence:
+### 7.1 会话启动预加载（KB-LOADER.md 新增步骤）
 
 ```markdown
 ## KB-Loader 预加载
 
-0. (NEW) 如果配置了 LLM_WIKI_PROJECT，通过 MCP 搜索相关经验
-   - 搜索关键词: LLM_WIKI_PROJECT + LLM_WIKI_DOMAIN
+0. （新增）如果配置了 LLM_WIKI_PROJECT，通过 MCP 搜索相关经验
+   - 搜索关键词：LLM_WIKI_PROJECT + LLM_WIKI_DOMAIN
    - 取 top 5 经验页面，提取标题和一行摘要
    - 告知用户："该项目有 N 条相关经验"
-   - 将经验摘要保持在上下文（供后续自动触发参考）
+   - 将经验摘要保持在上下文中，供后续自动触发参考
 ```
 
-### 7.2 Auto-Detect Trigger (in KB-LOADER.md)
-
-Add guidance for Claude Code to self-trigger experience search:
+### 7.2 自动触发规则（KB-LOADER.md 新增段落）
 
 ```markdown
 ## 自动触发规则
 
 当 Claude Code 在执行任务时遇到以下情况，**必须**主动通过 MCP 搜索知识库：
 
-1. **编译/运行时错误** — 错误信息包含 "error", "failed", "panic", "cannot" 等
+1. **编译/运行时错误** — 错误信息包含 "error"、"failed"、"panic"、"cannot" 等
 2. **配置文件问题** — 配置不生效、格式错误
 3. **环境依赖问题** — 找不到工具、版本不兼容
 4. **重复性工作** — 用户问"上次怎么做的"
@@ -591,16 +584,14 @@ Add guidance for Claude Code to self-trigger experience search:
 5. 问题解决后 → 确认是否产生新经验（如有，标记待 SessionEnd 提取）
 ```
 
-### 7.3 Slash Command: `/exp`
-
-A manual slash command for users to explicitly extract experience from the current session:
+### 7.3 斜杠命令：`/exp`
 
 ```markdown
 ## /exp — 手动提炼经验
 
-触发词: /exp 或 "提炼经验" 或 "记录这个坑"
+触发词：/exp 或 "提炼经验" 或 "记录这个坑"
 
-动作:
+动作：
 1. 获取当前会话的 transcript（最近的对话）
 2. 用户描述要记录的内容（可选：指定类型 bug/decision/pattern）
 3. 生成结构化经验页面 → 写入 wiki/ 对应目录
@@ -612,41 +603,41 @@ A manual slash command for users to explicitly extract experience from the curre
 
 ---
 
-## 8. Data Flow Summary
+## 八、数据流全景
 
 ```
                     ┌──────────────────────────────┐
-                    │     Claude Code Session        │
+                    │      Claude Code 会话          │
                     │                                │
-                    │  SessionStart: preload exp     │
-                    │  During: auto-detect + search  │
-                    │  /exp: manual mark             │
-                    │  SessionEnd: extract script    │
+                    │  SessionStart：预加载经验      │
+                    │  会话中：自动检测 + 搜索       │
+                    │  /exp：手动标注                │
+                    │  SessionEnd：提取脚本          │
                     └──────────┬───────────────────┘
                                │
                                ▼
                     ┌──────────────────────────────┐
                     │   extract_experiences.py      │
-                    │   (Phase 1)                   │
+                    │   （第一阶段）                 │
                     │                                │
-                    │   Transcript → LLM extraction  │
+                    │   Transcript → LLM 提取       │
                     │   → raw/sources/experiences/   │
                     └──────────┬───────────────────┘
                                │
                                ▼
                     ┌──────────────────────────────┐
                     │   llm_wiki Source Watch       │
-                    │   Detects new .md files       │
+                    │   检测到新 .md 文件            │
                     └──────────┬───────────────────┘
                                │
                                ▼
                     ┌──────────────────────────────┐
                     │   Ingest Pipeline             │
-                    │   (Phase 2: experience branch)│
+                    │   （第二阶段：经验分支）       │
                     │                                │
                     │   experience-prompt.ts        │
-                    │   → bug/decision/pattern/etc  │
-                    │   → embedding → LanceDB        │
+                    │   → bug/decision/pattern 等   │
+                    │   → 向量嵌入 → LanceDB         │
                     └──────────┬───────────────────┘
                                │
                                ▼
@@ -660,56 +651,56 @@ A manual slash command for users to explicitly extract experience from the curre
                     ┌──────────┴──────────┐
                     ▼                     ▼
              ┌─────────────┐    ┌─────────────────┐
-             │ Search API  │    │ sweep-patterns  │
-             │ (Phase 3:   │    │ (Phase 3:       │
-             │  weighted)  │    │  cross-session) │
+             │ 搜索 API    │    │ sweep-patterns  │
+             │（第三阶段： │    │（第三阶段：     │
+             │ 领域加权）  │    │ 跨会话挖掘）    │
              └──────┬──────┘    └─────────────────┘
                     │
                     ▼
              ┌─────────────────────────────────┐
-             │  Claude Code (next session)      │
-             │  Preloaded + auto-search ready   │
+             │  Claude Code（下一次会话）       │
+             │  经验已预加载 + 自动搜索就绪     │
              └─────────────────────────────────┘
 ```
 
 ---
 
-## 9. Non-Goals (Explicitly Out of Scope)
+## 九、明确不做的事项
 
-1. **No changes to Obsidian plugin or Obsidian compatibility** — experience pages use the same .md format
-2. **No MCP server protocol changes** — existing `llm_wiki_search` + `llm_wiki_read_file` are sufficient
-3. **No embedding model changes** — LanceDB + existing embedding pipeline unchanged
-4. **No graph algorithm changes** — existing Louvain community detection unchanged; pattern pages will naturally link to their evidence pages via `related:` frontmatter, which the graph already handles
-5. **No real-time collaboration features** — single-user system
-6. **No cloud sync** — local-first, same as current llm_wiki
-
----
-
-## 10. Risks & Mitigations
-
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| LLM extraction produces low-quality pages | Medium | High | Phase 1 is script-based (not pipeline), easy to iterate on prompt; Phase 2 gates on quality review |
-| Dedup misses → duplicate experience pages | Medium | Medium | Existing page-merge.ts 4-layer merge protects against body duplication; title-based dedup in extraction prompt |
-| Experience pages pollute search results | Low | Medium | Experience pages have distinct types; Phase 3 weighting ensures relevance |
-| extract_experiences.py costs too many tokens | Medium | Low | Token budget capped at 4096; chunking prevents oversized calls; optional skip flag |
-| Pattern mining produces false positives | High | Medium | Conservative threshold (≥2 pages); human review before auto-creating pattern; UI toggle to disable |
+1. **不改 Obsidian 插件及兼容性** — 经验页面使用相同 .md 格式，天然兼容
+2. **不改 MCP Server 协议** — 现有 `llm_wiki_search` + `llm_wiki_read_file` 已足够
+3. **不改向量嵌入模型** — LanceDB + 现有嵌入管线保持不变
+4. **不改图谱算法** — Louvain 社区发现不变；pattern 页面通过 `related:` 链接证据页面，已有图谱自动纳入
+5. **不做实时协作** — 单人使用场景
+6. **不做云端同步** — 本地优先，与现有 llm_wiki 一致
 
 ---
 
-## 11. Implementation Order
+## 十、风险与缓解
 
-| # | What | Phase | Estimated Effort | Dependencies |
-|---|------|-------|-----------------|--------------|
-| 1 | schema.md changes (project.rs) | 1 | Small (30 lines) | None |
-| 2 | extract_experiences.py | 1 | Medium (200 lines) | LLM API access |
-| 3 | SessionEnd hook integration | 1 | Small (20 lines) | #2 |
-| 4 | SessionStart preload (KB-LOADER.md) | 1 | Small (30 lines) | MCP server running |
-| 5 | Stop Hook error detection (KB-LOADER.md) | 1 | Small (40 lines) | None |
-| 6 | /exp slash command (CLAUDE.md) | 1 | Small (30 lines) | None |
-| 7 | Page templates (wiki/patterns/, wiki/templates/) | 1 | Trivial (create dirs) | #1 |
-| 8 | experience-prompt.ts | 2 | Medium (150 lines) | #2 validated |
-| 9 | ingest.ts experience branch | 2 | Medium (50 lines) | #8 |
-| 10 | sweep-patterns.ts | 3 | Large (300 lines) | ≥10 experience pages exist |
-| 11 | search.rs domain weighting | 3 | Medium (80 lines) | #1 (project/domain fields) |
-| 12 | Settings UI | 3 | Small (50 lines TSX) | #10, #11 |
+| 风险 | 概率 | 影响 | 缓解措施 |
+|------|------|------|----------|
+| LLM 经验提取质量低 | 中 | 高 | 第一阶段是脚本方式（非管线），prompt 可快速迭代；第二阶段有质量审核门槛 |
+| 去重遗漏 → 重复经验页 | 中 | 中 | page-merge.ts 的 4 层 merge 保护 + 提取 prompt 中的标题去重 |
+| 经验页面污染搜索结果 | 低 | 中 | 经验页面有独立 type；第三阶段加权搜索按项目/领域排序 |
+| extract_experiences.py 消耗过多 token | 中 | 低 | token 预算限制 4096；分块防止超长调用；可选 skip 标志 |
+| 模式挖掘产生误报 | 高 | 中 | 保守阈值（≥2 条经验才生成 pattern）；人工审核；UI 可关闭 |
+
+---
+
+## 十一、实施顺序
+
+| # | 内容 | 阶段 | 预估工作量 | 依赖 |
+|---|------|------|-----------|------|
+| 1 | schema.md 模板修改（project.rs） | 1 | 小（30 行） | 无 |
+| 2 | extract_experiences.py | 1 | 中（200 行） | LLM API 可访问 |
+| 3 | SessionEnd Hook 集成 | 1 | 小（20 行） | #2 |
+| 4 | SessionStart 预加载（KB-LOADER.md） | 1 | 小（30 行） | MCP Server 运行中 |
+| 5 | Stop Hook 错误检测（KB-LOADER.md） | 1 | 小（40 行） | 无 |
+| 6 | /exp 命令（CLAUDE.md） | 1 | 小（30 行） | 无 |
+| 7 | 页面模板（wiki/patterns/、wiki/templates/ 等） | 1 | 极小（创建目录） | #1 |
+| 8 | experience-prompt.ts | 2 | 中（150 行） | #2 已验证 |
+| 9 | ingest.ts 经验分支 | 2 | 中（50 行） | #8 |
+| 10 | sweep-patterns.ts | 3 | 大（300 行） | ≥10 条经验页面存在 |
+| 11 | search.rs 领域加权 | 3 | 中（80 行） | #1（project/domain 字段） |
+| 12 | Settings UI | 3 | 小（50 行 TSX） | #10, #11 |
