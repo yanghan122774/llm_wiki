@@ -248,6 +248,17 @@ describe("extractExperienceMeta", () => {
     const meta = extractExperienceMeta(content)
     expect(meta).toEqual({ project: "padded-project", domain: "padded-domain" })
   })
+
+  it("strips surrounding quotes from YAML values", () => {
+    const content = [
+      "---",
+      'project: "smart-lock-firmware"',
+      'domain: "embedded-arm"',
+      "---",
+    ].join("\n")
+    const meta = extractExperienceMeta(content)
+    expect(meta).toEqual({ project: "smart-lock-firmware", domain: "embedded-arm" })
+  })
 })
 
 // ── buildAnalysisPrompt experience mode ────────────────────────

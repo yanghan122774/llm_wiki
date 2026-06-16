@@ -72,9 +72,10 @@ export function extractExperienceMeta(sourceContent: string): {
 } {
   const projectMatch = sourceContent.match(/^project:\s*(.+)$/m)
   const domainMatch = sourceContent.match(/^domain:\s*(.+)$/m)
+  const strip = (v: string) => v.replace(/^["']|["']$/g, "").trim()
   return {
-    project: projectMatch?.[1]?.trim() || "unknown",
-    domain: domainMatch?.[1]?.trim() || "general",
+    project: projectMatch?.[1] ? strip(projectMatch[1]) : "unknown",
+    domain: domainMatch?.[1] ? strip(domainMatch[1]) : "general",
   }
 }
 
@@ -535,10 +536,6 @@ async function autoIngestImpl(
   const sourceSummarySlug = sourceSummarySlugFromIdentity(sourceIdentity)
   const sourceSummaryPath = `wiki/sources/${sourceSummarySlug}.md`
   console.log(`[ingest:diag] autoIngestImpl ENTRY for "${fileName}" (project="${pp}", source="${sp}")`)
-  // ── Experience source detection ──
-  const sourceIsExperience = isExperienceSource(sp)
-  const experienceMeta = sourceIsExperience ? extractExperienceMeta(sourceContent) : undefined
-  console.error(`[EXP-DEBUG-v6] sourceIsExperience=${sourceIsExperience} sourcePath="${sp}"`)
   const activityId = activity.addItem({
     type: "ingest",
     title: fileName,
@@ -588,6 +585,11 @@ async function autoIngestImpl(
     tryReadFile(`${pp}/wiki/index.md`),
     tryReadFile(`${pp}/wiki/overview.md`),
   ])
+
+  // ── Experience source detection ──
+  const sourceIsExperience = isExperienceSource(sp)
+  const experienceMeta = sourceIsExperience ? extractExperienceMeta(sourceContent) : undefined
+  console.error(`[EXP-DEBUG-v6] sourceIsExperience=${sourceIsExperience} sourcePath="${sp}"`)
 
   // ── Cache check: skip re-ingest if source content hasn't changed ──
   //
