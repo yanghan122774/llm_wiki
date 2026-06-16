@@ -1844,11 +1844,14 @@ export function buildGenerationPrompt(
   overview?: string,
   sourceContent: string = "",
   sourceSummaryPath?: string,
+  isExperience: boolean = false,
+  experienceMeta?: { project: string; domain: string },
 ): string {
   // Use original filename (without extension) as the source summary page name
   const sourceBaseName = sourceFileName.replace(/\.[^.]+$/, "")
   const summaryPath = sourceSummaryPath ?? `wiki/sources/${sourceBaseName}.md`
   const today = currentWikiDate()
+  console.error(`[GEN-v8] buildGenerationPrompt called — isExperience=${isExperience} sourceFileName="${sourceFileName}"`)
 
   return [
     "You are a wiki maintainer. Based on the analysis provided, generate wiki files.",
@@ -1873,14 +1876,41 @@ export function buildGenerationPrompt(
         ].join("\n")
       : "",
     "",
-    "## What to generate",
-    "",
-    `1. A source summary page at **${summaryPath}** (MUST use this exact path)`,
-    "2. Entity or schema-defined typed pages for key named things identified in the analysis. Prefer schema-defined directories when present; otherwise use wiki/entities/.",
-    "3. Concept or schema-defined typed pages for key ideas, methods, techniques, and abstractions. Prefer schema-defined directories when present; otherwise use wiki/concepts/.",
-    "4. An updated wiki/index.md — add new entries to existing categories, preserve all existing entries",
-    "5. A log entry for wiki/log.md (just the new entry to append, format: ## [YYYY-MM-DD] ingest | Title)",
-    "6. An updated wiki/overview.md — a high-level summary of what the entire wiki covers, updated to reflect the newly ingested source. This should be a comprehensive 2-5 paragraph overview of ALL topics in the wiki, not just the new source.",
+    isExperience
+      ? [
+          "## What to generate",
+          "",
+          "This is a PROJECT EXPERIENCE extraction task. The source is a development",
+          "session transcript. Generate ONE FILE block PER experience found.",
+          "Do NOT create a source summary page. The transcript itself IS the source.",
+          "",
+          "1. **bug** pages → wiki/bugs/<slug>.md",
+          "   Structure: ## 现象 → ## 根因 → ## 解决方案 → ## 预防措施",
+          "2. **decision** pages → wiki/decisions/<slug>.md",
+          "   Structure: ## 背景 → ## 考虑的方案 → ## 决策 → ## 后果",
+          "3. **howto** pages → wiki/howto/<slug>.md",
+          "   Structure: ## 目的 → ## 前置条件 → ## 步骤 → ## 验证",
+          "4. **agent-error** pages → wiki/agent-errors/<slug>.md",
+          "   Structure: ## 错误行为 → ## 纠正方式 → ## 触发特征 → ## 预防",
+          "5. **pattern** pages → wiki/patterns/<slug>.md",
+          "   Use ONLY when ≥2 related bugs share a root cause. Include ## 证据 section.",
+          "6. **template** pages → wiki/templates/<slug>.md",
+          "   Structure: ## 适用范围 → ## 检查清单 → ## 常见坑点",
+          "",
+          "Do NOT create wiki/sources/ pages — this source type doesn't need them.",
+          "If the analysis has NO extractable experiences, output only a single",
+          "FILE block containing the word NO_EXPERIENCES as its content.",
+        ].join("\n")
+      : [
+          "## What to generate",
+          "",
+          `1. A source summary page at **${summaryPath}** (MUST use this exact path)`,
+          "2. Entity or schema-defined typed pages for key named things identified in the analysis. Prefer schema-defined directories when present; otherwise use wiki/entities/.",
+          "3. Concept or schema-defined typed pages for key ideas, methods, techniques, and abstractions. Prefer schema-defined directories when present; otherwise use wiki/concepts/.",
+          "4. An updated wiki/index.md — add new entries to existing categories, preserve all existing entries",
+          "5. A log entry for wiki/log.md (just the new entry to append, format: ## [YYYY-MM-DD] ingest | Title)",
+          "6. An updated wiki/overview.md — a high-level summary of what the entire wiki covers, updated to reflect the newly ingested source. This should be a comprehensive 2-5 paragraph overview of ALL topics in the wiki, not just the new source.",
+        ].join("\n"),
     "",
     "## Frontmatter Rules (CRITICAL — parser is strict)",
     "",
@@ -1897,7 +1927,9 @@ export function buildGenerationPrompt(
     "   write `related: [a, b]` with bare slugs.",
     "",
     "Required fields and types:",
-    `  • type     — one of the known types (${GENERATION_WIKI_TYPES.join(" | ")}), or a custom type explicitly defined by the project schema`,
+    isExperience
+      ? `  • type     — MUST be one of: ${EXPERIENCE_TYPES.join(" | ")}. Using "source", "entity", "concept", or any other non-experience type WILL be rejected.`
+      : `  • type     — one of the known types (${GENERATION_WIKI_TYPES.join(" | ")}), or a custom type explicitly defined by the project schema`,
     "  • title    — string (quote it if it contains a colon, e.g. `title: \"Foo: Bar\"`)",
     `  • created  — ${today} for new pages (YYYY-MM-DD, no quotes)`,
     `  • updated  — ${today} for new pages (same as created)`,
@@ -1905,6 +1937,12 @@ export function buildGenerationPrompt(
     "  • related  — array of bare wiki page slugs: `related: [foo, bar-baz]`. Do NOT include",
     "               `wiki/`, `.md`, or `[[…]]` here — slugs only.",
     `  • sources  — array of source filenames; MUST include "${sourceFileName}".`,
+    isExperience
+      ? [
+          `  • project  — "${experienceMeta?.project || "unknown"}" (REQUIRED for all experience pages)`,
+          `  • domain   — "${experienceMeta?.domain || "general"}" (REQUIRED for all experience pages)`,
+        ].join("\n")
+      : "",
     "",
     "Concrete example of a complete, parseable page (everything between the two `---` lines",
     "is the frontmatter; the heading and prose below are the body):",
@@ -1924,6 +1962,13 @@ export function buildGenerationPrompt(
     "    Body content goes here. Use [[wikilink]] syntax in the body for cross-references.",
     "",
     "Other rules:",
+    ...(isExperience
+      ? [
+          "- Experience page bodies MUST follow the structure specified in \"What to generate\" above",
+          "- Every experience page MUST include the project and domain in frontmatter",
+          "- Tag experience pages with relevant technical keywords for cross-project search",
+        ]
+      : []),
     "- Use [[wikilink]] syntax in the BODY for cross-references between pages",
     "- If you include images, use wiki-root-relative paths such as `media/source-slug/image.png`; never output absolute filesystem paths.",
     "- Use kebab-case filenames",
