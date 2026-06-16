@@ -38,6 +38,46 @@ import type { MultimodalConfig } from "@/stores/wiki-store"
 import { GENERATION_WIKI_TYPES } from "@/lib/wiki-page-types"
 import { computeContextBudget } from "@/lib/context-budget"
 
+/** 经验类型列表 —— 用于 Ingest 管线检测到经验源时切换 prompt */
+export const EXPERIENCE_TYPES = [
+  "bug",
+  "decision",
+  "howto",
+  "agent-error",
+  "pattern",
+  "template",
+] as const
+
+/**
+ * 判断源文件是否应走经验提取路径。
+ * 匹配路径中包含 /experiences/ 或 /sessions/ 的文件。
+ */
+export function isExperienceSource(sourcePath: string): boolean {
+  const normalized = sourcePath.replace(/\\/g, "/").toLowerCase()
+  return (
+    normalized.includes("/experiences/") ||
+    normalized.includes("/sessions/") ||
+    normalized.startsWith("experiences/") ||
+    normalized.startsWith("sessions/")
+  )
+}
+
+/**
+ * 从经验源 Markdown 的 frontmatter 中提取 project 和 domain。
+ * extract_experiences.py 会在 frontmatter 中写入这两个字段。
+ */
+export function extractExperienceMeta(sourceContent: string): {
+  project: string
+  domain: string
+} {
+  const projectMatch = sourceContent.match(/^project:\s*(.+)$/m)
+  const domainMatch = sourceContent.match(/^domain:\s*(.+)$/m)
+  return {
+    project: projectMatch?.[1]?.trim() || "unknown",
+    domain: domainMatch?.[1]?.trim() || "general",
+  }
+}
+
 const LONG_SOURCE_MIN_BUDGET = 8_000
 const LONG_SOURCE_MAX_SINGLE_PASS_BUDGET = 300_000
 const LONG_SOURCE_CHUNK_MIN = 12_000
