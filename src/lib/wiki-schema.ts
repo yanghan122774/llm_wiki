@@ -72,6 +72,15 @@ export function validateWikiPageRouting(
   const type = parsed.frontmatter?.type
   if (typeof type !== "string" || !type.trim()) return null
 
+  // Reject types not defined in the schema — prevents LLM from inventing
+  // types (e.g. "source" when the schema only defines experience types).
+  if (!(type in routing.typeDirs)) {
+    const known = Object.keys(routing.typeDirs).join(", ")
+    return {
+      message: `Unknown page type "${type}" — not in schema. Known types: ${known}`,
+    }
+  }
+
   const normalizedPath = normalizeRelativePath(relativePath)
   const actualDir = dirname(normalizedPath)
   const expectedDir = routing.typeDirs[type]
