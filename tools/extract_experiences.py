@@ -22,8 +22,6 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any
-
 # ---------------------------------------------------------------------------
 # 1. 过滤噪音
 # ---------------------------------------------------------------------------
@@ -60,6 +58,7 @@ def load_transcript(path: str) -> list[dict]:
             try:
                 msg = json.loads(line)
             except json.JSONDecodeError:
+                print(f"    警告: 跳过无效 JSON 行 {len(messages)+1}", file=sys.stderr)
                 continue
             if not is_noise_message(msg):
                 messages.append(msg)
@@ -100,14 +99,13 @@ def format_msg(msg: dict, idx: int) -> str:
     return f"## [{idx}] {role}\n\n{text}\n"
 
 
-def build_markdown(messages: list[dict], project: str, domain: str) -> str:
+def build_markdown(messages: list[dict], project: str, domain: str, today: str) -> str:
     """将消息列表构建为完整 Markdown 文件。"""
-    today = datetime.now().strftime("%Y-%m-%d")
 
     parts = [
         "---",
-        f"project: {project}",
-        f"domain: {domain}",
+        f'project: "{project}"',
+        f'domain: "{domain}"',
         f"created: {today}",
         "---",
         "",
@@ -131,12 +129,11 @@ def build_markdown(messages: list[dict], project: str, domain: str) -> str:
 # 3. 写入
 # ---------------------------------------------------------------------------
 
-def write_output(output_dir: str, content: str, project: str, transcript_path: str) -> str:
+def write_output(output_dir: str, content: str, project: str, transcript_path: str, today: str) -> str:
     """将 Markdown 内容写入文件。返回写入路径。"""
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    today = datetime.now().strftime("%Y-%m-%d")
     # 用 transcript 文件名 + 内容哈希生成唯一标识
     base = Path(transcript_path).stem
     content_hash = hashlib.sha256(content.encode()).hexdigest()[:8]
@@ -167,6 +164,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="只打印预览，不写入文件")
 
     args = parser.parse_args()
+    today = datetime.now().strftime("%Y-%m-%d")
 
     if args.output_dir:
         output_dir = args.output_dir
@@ -183,7 +181,7 @@ def main():
         return
 
     print(f"[2/3] 构建 Markdown...")
-    content = build_markdown(messages, args.project, args.domain)
+    content = build_markdown(messages, args.project, args.domain, today)
     print(f"      生成 {len(content)} 字符")
 
     print(f"[3/3] 写入文件...")
@@ -192,7 +190,7 @@ def main():
         print(content[:500])
         print(f"\n[dry-run] 共 {len(content)} 字符（未写入）")
     else:
-        path = write_output(str(output_dir), content, args.project, args.transcript)
+        path = write_output(str(output_dir), content, args.project, args.transcript, today)
         print(f"    写入: {path}")
         print(f"\n完成！Ingest 管线将自动检测并处理此文件。")
 
