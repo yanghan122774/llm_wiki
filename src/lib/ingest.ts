@@ -535,6 +535,10 @@ async function autoIngestImpl(
   const sourceSummarySlug = sourceSummarySlugFromIdentity(sourceIdentity)
   const sourceSummaryPath = `wiki/sources/${sourceSummarySlug}.md`
   console.log(`[ingest:diag] autoIngestImpl ENTRY for "${fileName}" (project="${pp}", source="${sp}")`)
+  // ── Experience source detection ──
+  const sourceIsExperience = isExperienceSource(sp)
+  const experienceMeta = sourceIsExperience ? extractExperienceMeta(sourceContent) : undefined
+  console.error(`[EXP-DEBUG-v6] sourceIsExperience=${sourceIsExperience} sourcePath="${sp}"`)
   const activityId = activity.addItem({
     type: "ingest",
     title: fileName,
@@ -847,7 +851,7 @@ async function autoIngestImpl(
     await streamChat(
       llmConfig,
       [
-        { role: "system", content: buildAnalysisPrompt(purpose, index, sourceContext) },
+        { role: "system", content: buildAnalysisPrompt(purpose, index, sourceContext, sourceIsExperience, experienceMeta) },
         { role: "user", content: `Analyze this source document:\n\n**File:** ${sourceIdentity}${folderContext ? `\n**Folder context:** ${folderContext}` : ""}\n\n---\n\n${sourceContext}` },
       ],
       {
@@ -879,7 +883,7 @@ async function autoIngestImpl(
   await streamChat(
     llmConfig,
     [
-      { role: "system", content: buildGenerationPrompt(schema, purpose, index, sourceIdentity, overview, sourceContext, sourceSummaryPath) },
+      { role: "system", content: buildGenerationPrompt(schema, purpose, index, sourceIdentity, overview, sourceContext, sourceSummaryPath, sourceIsExperience, experienceMeta) },
       {
         role: "user",
         content: [
@@ -1089,7 +1093,7 @@ async function autoIngestImpl(
   // old project's wiki would both be noise and mask the error.
   // Returning no files lets processNext's length-0 safety net mark the
   // task for retry rather than "success".
-  if (!hasSourceSummary && !signal?.aborted) {
+  if (!hasSourceSummary && !signal?.aborted && !sourceIsExperience) {
     const date = new Date().toISOString().slice(0, 10)
     const fallbackContent = [
       "---",
