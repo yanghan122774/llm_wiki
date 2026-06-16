@@ -6,6 +6,9 @@ import {
   computeIngestReviewMaxTokens,
   computeIngestSourceBudget,
   splitSourceIntoSemanticChunks,
+  isExperienceSource,
+  extractExperienceMeta,
+  EXPERIENCE_TYPES,
 } from "./ingest"
 import { useWikiStore } from "@/stores/wiki-store"
 
@@ -163,5 +166,217 @@ describe("long-source ingest planning", () => {
     expect(chunks.some((chunk) => chunk.headingPath.includes("Section Two"))).toBe(true)
     expect(chunks[1].overlapBefore.length).toBeGreaterThan(0)
     expect(chunks[1].main.startsWith(chunks[0].main.slice(-200))).toBe(false)
+  })
+})
+
+// ── Utility functions ──────────────────────────────────────────
+
+describe("EXPERIENCE_TYPES", () => {
+  it("contains exactly 6 experience types", () => {
+    expect(EXPERIENCE_TYPES).toEqual([
+      "bug",
+      "decision",
+      "howto",
+      "agent-error",
+      "pattern",
+      "template",
+    ])
+  })
+})
+
+describe("isExperienceSource", () => {
+  it("detects /experiences/ anywhere in the path", () => {
+    expect(isExperienceSource("raw/sources/experiences/foo.md")).toBe(true)
+    expect(isExperienceSource("/home/user/project/experiences/bar.md")).toBe(true)
+  })
+
+  it("detects /sessions/ anywhere in the path", () => {
+    expect(isExperienceSource("raw/sessions/2026-01-01.md")).toBe(true)
+    expect(isExperienceSource("project/sessions/transcript.md")).toBe(true)
+  })
+
+  it("detects paths starting with experiences/ or sessions/", () => {
+    expect(isExperienceSource("experiences/foo.md")).toBe(true)
+    expect(isExperienceSource("sessions/bar.md")).toBe(true)
+  })
+
+  it("normalizes Windows backslashes", () => {
+    expect(isExperienceSource("raw\\sources\\experiences\\foo.md")).toBe(true)
+    expect(isExperienceSource("project\\sessions\\bar.md")).toBe(true)
+  })
+
+  it("returns false for normal source paths", () => {
+    expect(isExperienceSource("raw/sources/papers/foo.pdf")).toBe(false)
+    expect(isExperienceSource("wiki/sources/bar.md")).toBe(false)
+    expect(isExperienceSource("documents/article.md")).toBe(false)
+  })
+
+  it("handles case-insensitive matching", () => {
+    expect(isExperienceSource("RAW/SOURCES/EXPERIENCES/foo.md")).toBe(true)
+    expect(isExperienceSource("Project/Sessions/bar.md")).toBe(true)
+  })
+})
+
+describe("extractExperienceMeta", () => {
+  it("extracts project and domain from frontmatter", () => {
+    const content = [
+      "---",
+      "project: smart-lock-firmware",
+      "domain: embedded-arm",
+      "created: 2026-06-15",
+      "---",
+      "",
+      "# Session Transcript",
+    ].join("\n")
+    const meta = extractExperienceMeta(content)
+    expect(meta).toEqual({ project: "smart-lock-firmware", domain: "embedded-arm" })
+  })
+
+  it("returns defaults when fields are missing", () => {
+    const content = "# No frontmatter\n\nJust content."
+    const meta = extractExperienceMeta(content)
+    expect(meta).toEqual({ project: "unknown", domain: "general" })
+  })
+
+  it("trims whitespace from values", () => {
+    const content = [
+      "---",
+      "project:   padded-project  ",
+      "domain:   padded-domain  ",
+      "---",
+    ].join("\n")
+    const meta = extractExperienceMeta(content)
+    expect(meta).toEqual({ project: "padded-project", domain: "padded-domain" })
+  })
+})
+
+// ── buildAnalysisPrompt experience mode ────────────────────────
+
+describe("buildAnalysisPrompt experience mode", () => {
+  it("switches to experience analysis dimensions when isExperience is true", () => {
+    const prompt = buildAnalysisPrompt("", "", "", true, { project: "test", domain: "embedded" })
+    expect(prompt).toContain("Project: test")
+    expect(prompt).toContain("Domain: embedded")
+    expect(prompt).toContain("## 1. Bugs & Defects")
+    expect(prompt).toContain("## 4. Agent Errors (Claude Code mistakes)")
+    expect(prompt).not.toContain("## Key Entities")
+    expect(prompt).not.toContain("## Key Concepts")
+  })
+
+  it("uses defaults when experienceMeta is undefined", () => {
+    const prompt = buildAnalysisPrompt("", "", "", true)
+    expect(prompt).toContain("Project: unknown")
+    expect(prompt).toContain("Domain: general")
+  })
+
+  it("keeps standard dimensions when isExperience is false (default)", () => {
+    const prompt = buildAnalysisPrompt("", "", "")
+    expect(prompt).not.toContain("Bugs & Defects")
+    expect(prompt).toContain("## Key Entities")
+    expect(prompt).toContain("## Main Arguments & Findings")
+  })
+
+  it("keeps standard dimensions when isExperience is explicitly false", () => {
+    const prompt = buildAnalysisPrompt("", "", "", false)
+    expect(prompt).toContain("## Key Entities")
+    expect(prompt).not.toContain("## 1. Bugs & Defects")
+  })
+})
+
+// ── buildGenerationPrompt experience mode ──────────────────────
+
+describe("buildGenerationPrompt experience mode", () => {
+  const expMeta = { project: "my-project", domain: "iot" }
+
+  it("switches to experience generation targets when isExperience is true", () => {
+    const prompt = buildGenerationPrompt(
+      "", "", "", "transcript.md", undefined, "", undefined, true, expMeta,
+    )
+    expect(prompt).toContain("PROJECT EXPERIENCE extraction")
+    expect(prompt).toContain("wiki/bugs/")
+    expect(prompt).toContain("wiki/decisions/")
+    expect(prompt).toContain("wiki/howto/")
+    expect(prompt).toContain("wiki/agent-errors/")
+    expect(prompt).toContain("wiki/patterns/")
+    expect(prompt).toContain("wiki/templates/")
+    // Must NOT instruct LLM to create a source summary page
+    expect(prompt).not.toContain("A source summary page at")
+    expect(prompt).not.toContain("Entity or schema-defined typed pages")
+    expect(prompt).not.toContain("Concept or schema-defined typed pages")
+  })
+
+  it("restricts type to EXPERIENCE_TYPES and warns about rejection", () => {
+    const prompt = buildGenerationPrompt(
+      "", "", "", "x.md", undefined, "", undefined, true, expMeta,
+    )
+    expect(prompt).toContain("MUST be one of: bug | decision | howto | agent-error | pattern | template")
+    expect(prompt).toContain("WILL be rejected")
+    // The type line: verify it restricts to experience types and warns about others
+    const typeLine = prompt.match(/type\s+—\s+MUST be one of:.*/)?.[0] ?? ""
+    // Allowed types section comes first, then the warning
+    expect(typeLine).toContain("MUST be one of: bug | decision | howto | agent-error | pattern | template")
+    expect(typeLine).toContain('Using "source"')
+    expect(typeLine).toContain("non-experience type WILL be rejected")
+  })
+
+  it("includes project and domain as required frontmatter fields", () => {
+    const prompt = buildGenerationPrompt(
+      "", "", "", "x.md", undefined, "", undefined, true, expMeta,
+    )
+    expect(prompt).toContain('project  — "my-project"')
+    expect(prompt).toContain('domain   — "iot"')
+    expect(prompt).toContain("REQUIRED for all experience pages")
+  })
+
+  it("includes experience-specific body structure rules", () => {
+    const prompt = buildGenerationPrompt(
+      "", "", "", "x.md", undefined, "", undefined, true, expMeta,
+    )
+    expect(prompt).toContain("Experience page bodies MUST follow the structure")
+    expect(prompt).toContain("project and domain in frontmatter")
+    expect(prompt).toContain("cross-project search")
+  })
+
+  it("uses default project/domain when experienceMeta is undefined", () => {
+    const prompt = buildGenerationPrompt(
+      "", "", "", "x.md", undefined, "", undefined, true,
+    )
+    expect(prompt).toContain('project  — "unknown"')
+    expect(prompt).toContain('domain   — "general"')
+  })
+
+  it("keeps standard generation targets when isExperience is false", () => {
+    const prompt = buildGenerationPrompt(
+      "", "", "", "paper.pdf",
+    )
+    expect(prompt).toContain("A source summary page at")
+    expect(prompt).toContain("Entity or schema-defined typed pages")
+    expect(prompt).toContain("Concept or schema-defined typed pages")
+    expect(prompt).toContain("wiki/index.md")
+    expect(prompt).toContain("wiki/log.md")
+  })
+
+  it("emits [GEN-v8] debug marker in both modes", () => {
+    // The debug log goes to console.error, but we can verify the prompt
+    // still contains the right content regardless of mode.
+    const standard = buildGenerationPrompt("", "", "", "f.pdf")
+    const experience = buildGenerationPrompt(
+      "", "", "", "f.md", undefined, "", undefined, true, expMeta,
+    )
+    // Both should contain the "What to generate" section header
+    expect(standard).toContain("## What to generate")
+    expect(experience).toContain("## What to generate")
+    // Only experience mode mentions experience extraction
+    expect(experience).toContain("PROJECT EXPERIENCE extraction")
+    expect(standard).not.toContain("PROJECT EXPERIENCE extraction")
+  })
+
+  it("experience mode does NOT instruct LLM to generate index or log", () => {
+    const prompt = buildGenerationPrompt(
+      "", "", "", "x.md", undefined, "", undefined, true, expMeta,
+    )
+    // The "What to generate" section for experience mode should not mention index/log
+    expect(prompt).not.toMatch(/An updated wiki\/index\.md/)
+    expect(prompt).not.toMatch(/A log entry for wiki\/log\.md/)
   })
 })

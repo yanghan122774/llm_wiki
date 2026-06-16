@@ -96,3 +96,47 @@ describe("validateWikiPageRouting", () => {
     expect(validateWikiPageRouting("wiki/concepts/no-type.md", "# No Type", routing)).toBeNull()
   })
 })
+
+describe("validateWikiPageRouting unknown type rejection", () => {
+  const experienceRouting = parseWikiSchemaRouting([
+    "# Wiki Schema",
+    "",
+    "## Page Types",
+    "",
+    "| Type | Directory | Purpose |",
+    "| ---- | --------- | ------- |",
+    "| bug | wiki/bugs/ | Defects |",
+    "| decision | wiki/decisions/ | Architecture decisions |",
+  ].join("\n"))
+
+  it("rejects a type not defined in the schema", () => {
+    const issue = validateWikiPageRouting(
+      "wiki/bugs/some-bug.md",
+      ["---", "type: source", "title: Test", "---", "", "# Test"].join("\n"),
+      experienceRouting,
+    )
+    expect(issue).not.toBeNull()
+    expect(issue?.message).toContain('Unknown page type "source"')
+    expect(issue?.message).toContain("bug, decision")
+  })
+
+  it("allows types that are defined in the schema", () => {
+    expect(
+      validateWikiPageRouting(
+        "wiki/bugs/hardfault.md",
+        ["---", "type: bug", "title: HardFault", "---", "", "# HardFault"].join("\n"),
+        experienceRouting,
+      ),
+    ).toBeNull()
+  })
+
+  it("still enforces type-to-directory matching after unknown type check", () => {
+    const issue = validateWikiPageRouting(
+      "wiki/decisions/wrong-dir.md",
+      ["---", "type: bug", "title: Wrong Dir", "---", "", "# Wrong Dir"].join("\n"),
+      experienceRouting,
+    )
+    expect(issue).not.toBeNull()
+    expect(issue?.message).toContain('type "bug" must be under "wiki/bugs/"')
+  })
+})
