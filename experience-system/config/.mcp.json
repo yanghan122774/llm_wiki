@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "llm-wiki": {
+      "command": "node",
+      "args": ["<llm_wiki安装目录>/mcp-server/dist/src/index.js"]
+    }
+  }
+}

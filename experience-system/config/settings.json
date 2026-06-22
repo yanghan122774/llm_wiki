@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionEnd": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "python <experience-system>/tools/capture_session.py --stdin"
+      }]
+    }]
+  },
+  "env": {
+    "LLM_WIKI_PROJECT": "<你的项目名>",
+    "LLM_WIKI_DOMAIN": "<技术领域>",
+    "LLM_WIKI_ROOT": "<llm_wiki 安装目录>",
+    "LLM_WIKI_OUTPUT_DIR": "<你的wiki项目>/raw/sources/experiences"
+  }
+}

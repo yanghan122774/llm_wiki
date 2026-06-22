@@ -830,6 +830,8 @@ async function autoIngestImpl(
       sourceBudget,
       activityId,
       signal,
+      sourceIsExperience,
+      experienceMeta,
     )
     if (longSourcePlan.chunked) {
       sourceContext = longSourcePlan.sourceContext
@@ -2488,6 +2490,8 @@ function buildChunkAnalysisSystemPrompt(
   schema: string,
   index: string,
   sourceContent: string,
+  isExperience: boolean = false,
+  experienceMeta?: { project: string; domain: string },
 ): string {
   return [
     "You are analyzing a long source document for a personal wiki.",
@@ -2497,18 +2501,43 @@ function buildChunkAnalysisSystemPrompt(
     "",
     languageRule(sourceContent),
     "",
-    "Output exactly two markdown sections:",
-    "",
-    "## Chunk Analysis",
-    "- Concise summary of the main chunk",
-    "- New or updated entities",
-    "- New or updated concepts",
-    "- Claims, findings, evidence, contradictions",
-    "- Open questions or research gaps",
-    "",
-    "## Updated Global Digest",
-    "A compact document-level digest that incorporates this chunk and preserves prior cross-chunk context.",
-    "Keep this digest structured under: Summary, Entities, Concepts, Claims, Evidence, Contradictions, Open Questions, Cross-Chunk Relations.",
+    isExperience
+      ? [
+          `Project: ${experienceMeta?.project || "unknown"}  |  Domain: ${experienceMeta?.domain || "general"}`,
+          "",
+          "Output exactly two markdown sections:",
+          "",
+          "## Chunk Analysis",
+          "- Concise summary of the main chunk",
+          "- Bugs & defects found (symptoms, root causes, fixes, status: unresolved | resolved | cannot-reproduce | wont-fix)",
+          "- Architecture / technology decisions (choices made, alternatives, rationale, status: proposed | accepted | deprecated | superseded)",
+          "- How-to / repeatable procedures (steps, commands, file paths)",
+          "- Agent errors / Claude Code mistakes (what went wrong, how corrected, trigger patterns)",
+          "- Potential patterns (recurring issues with ≥2 occurrences sharing a root cause)",
+          "- Cross-references to existing wiki pages from the index",
+          "- Status detection for each finding:",
+          "  * Bug status default: unresolved",
+          "  * Decision status default: accepted",
+          "- Open questions or research gaps",
+          "",
+          "## Updated Global Digest",
+          "A compact document-level digest that incorporates this chunk and preserves prior cross-chunk context.",
+          "Keep this digest structured under: Summary, Bugs, Decisions, How-To, Agent Errors, Patterns, Cross-Chunk Relations.",
+        ].join("\n")
+      : [
+          "Output exactly two markdown sections:",
+          "",
+          "## Chunk Analysis",
+          "- Concise summary of the main chunk",
+          "- New or updated entities",
+          "- New or updated concepts",
+          "- Claims, findings, evidence, contradictions",
+          "- Open questions or research gaps",
+          "",
+          "## Updated Global Digest",
+          "A compact document-level digest that incorporates this chunk and preserves prior cross-chunk context.",
+          "Keep this digest structured under: Summary, Entities, Concepts, Claims, Evidence, Contradictions, Open Questions, Cross-Chunk Relations.",
+        ].join("\n"),
     "",
     "Stable project context follows. It changes rarely and should be treated as background:",
     purpose ? `## Wiki Purpose\n${purpose}` : "",
@@ -2554,6 +2583,8 @@ async function analyzeLongSourceInChunks(
   sourceBudget: number,
   activityId: string,
   signal?: AbortSignal,
+  sourceIsExperience: boolean = false,
+  experienceMeta?: { project: string; domain: string },
 ): Promise<LongSourcePlan> {
   const targetChars = clampNumber(Math.floor(sourceBudget * 0.55), LONG_SOURCE_CHUNK_MIN, LONG_SOURCE_CHUNK_MAX)
   const overlapChars = clampNumber(Math.floor(targetChars * 0.08), 800, 3_000)
@@ -2563,7 +2594,7 @@ async function analyzeLongSourceInChunks(
   }
 
   const activity = useActivityStore.getState()
-  const systemPrompt = buildChunkAnalysisSystemPrompt(purpose, schema, index, sourceContent)
+  const systemPrompt = buildChunkAnalysisSystemPrompt(purpose, schema, index, sourceContent, sourceIsExperience, experienceMeta)
   const sourceHash = hashTextHex(sourceContent)
   const checkpointPath = longSourceCheckpointPath(projectPath, sourceSummarySlug, sourceHash)
   const checkpointParams = {
