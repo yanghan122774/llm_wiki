@@ -697,6 +697,18 @@ updated: YYYY-MM-DD
 ---
 \`\`\`
 
+Bug pages also include:
+\`\`\`yaml
+status: unresolved | resolved | cannot-reproduce | wont-fix
+resolution: ""   # required when status=resolved — one-line fix summary
+\`\`\`
+
+Decision pages also include:
+\`\`\`yaml
+status: proposed | accepted | deprecated | superseded
+superseded_by: ""   # required when status=superseded — slug of replacement decision
+\`\`\`
+
 ## Index Format
 
 \`wiki/index.md\` lists all pages grouped by type:
@@ -727,8 +739,23 @@ updated: YYYY-MM-DD
 \`\`\`
 ## YYYY-MM-DD
 
-- ingest | session transcript processed
+**Session:** <one-line summary of what the session accomplished>
+
+- Fixed [[bug-slug]] — <one-line resolution>
+- New [[page-slug]] — <one-line description>
+- Linked [[bug-slug]] → pattern — <why this strengthens the pattern>
 \`\`\`
+
+### Log Entry Prefixes
+
+| Prefix | Meaning | Applies to |
+|--------|---------|------------|
+| \`Fixed\` | Bug resolved this session | bug |
+| \`New\` | Page created this session | bug / decision / howto / agent-error / pattern / template |
+| \`Linked\` | Bug strengthened an existing pattern | bug → pattern |
+| \`Updated\` | Page content changed | any |
+| \`Deprecated\` | Decision no longer applicable | decision |
+| \`In progress\` | Manually noted task | any |
 
 ## Cross-referencing Rules
 
@@ -746,27 +773,39 @@ When experience pages conflict:
 `,
   purpose: `# Project Purpose — Experience Accumulation
 
-## Project
+## Project Identity
 
+**Project name:**
 **Repository:**
-**Domain:**
-**Description:**
+**Tech stack:** (e.g., ARM Cortex-M4 / STM32F407 / arm-gcc 12.3 / FreeRTOS)
+**Domain:** (e.g., embedded-firmware, ble-protocol, memory-protection)
+**Team:** (optional — who is working on this)
 
-## Why Track Experiences
+## Current Phase
 
-<!-- What makes this project worth learning from? -->
+<!-- What are you currently building or working on? Keep this updated. -->
 
-## Current Focus
-
-<!-- What aspect of the project are you most actively working on? -->
-
+**Active phase:**
+**Active tasks:**
 1.
 2.
 3.
 
+## Project Timeline
+
+**Started:**
+**Milestones:**
+-
+
+## Key Constraints
+
+<!-- e.g., specific chip revision, custom board, toolchain version lock -->
+
+-
+
 ## Experience Quality Guidelines
 
-- **Bug pages:** Include exact error messages and stack traces when available
+- **Bug pages:** Include exact error messages, register dumps, stack traces when available
 - **Decision pages:** Always list alternatives considered, not just the chosen option
 - **How-to pages:** Must be reproducible — include exact commands and file paths
 - **Agent-error pages:** Include what triggered the mistake (ambiguous prompt, missing context)
