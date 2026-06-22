@@ -22,28 +22,74 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# 0. Claude Code JSONL 结构适配
+# ---------------------------------------------------------------------------
+
+# 真实 JSONL 有两层：
+#   顶层: { type, message: { role, content: [...] } }
+# 顶层 type 决定这是哪种事件，message.content 是实际的对话内容。
+#
+# 顶层 type 白名单 — 只有这些类型才包含有价值的对话内容
+_CONTENT_TYPES = {"user", "assistant"}
+
+# 顶层 type 黑名单 — 纯噪音，直接丢弃
+_NOISE_TYPES = {
+    "attachment",
+    "queue-operation",
+    "file-history-snapshot",
+    "last-prompt",
+    "system",
+}
+
+# content block 中需要过滤的类型（thinking 不提取）
+_NOISE_BLOCKS = {"thinking"}
+
+
+def _message_content(msg: dict) -> list[dict] | None:
+    """从真实 JSONL 结构中提取 message.content。"""
+    message = msg.get("message")
+    if not isinstance(message, dict):
+        return None
+    content = message.get("content")
+    if isinstance(content, list):
+        return content
+    if isinstance(content, str) and content.strip():
+        return [{"type": "text", "text": content}]
+    return None
+
+
+def _message_role(msg: dict) -> str:
+    """从真实 JSONL 结构中提取 message.role。"""
+    message = msg.get("message")
+    if isinstance(message, dict):
+        return message.get("role", "unknown")
+    return "unknown"
+
 # ---------------------------------------------------------------------------
 # 1. 过滤噪音
 # ---------------------------------------------------------------------------
 
-NOISE_ROLES = {"system", "attachment"}
-NOISE_TYPES = {"thinking", "attachment"}
-
 
 def is_noise_message(msg: dict) -> bool:
-    """过滤 thinking 块、attachment 事件、系统消息。"""
-    role = msg.get("role", "")
+    """过滤非对话内容的事件（queue-operation、attachment 等）。"""
     msg_type = msg.get("type", "")
 
-    if role in NOISE_ROLES:
+    # 顶层 type 不在白名单 → 噪音
+    if msg_type not in _CONTENT_TYPES:
         return True
-    if msg_type in NOISE_TYPES:
+
+    # 在内容名单内但 content 为空 → 噪音
+    blocks = _message_content(msg)
+    if not blocks:
         return True
-    if msg.get("content") is None or msg.get("content", "") == "":
+
+    # 所有文本块都是空的 → 噪音
+    texts = [b.get("text", "") for b in blocks if b.get("type") == "text"]
+    if all(t.strip() == "" for t in texts):
         return True
-    if isinstance(msg.get("content"), list):
-        texts = [b.get("text", "") for b in msg["content"] if b.get("type") == "text"]
-        return all(t.strip() == "" for t in texts)
+
     return False
 
 
@@ -58,7 +104,6 @@ def load_transcript(path: str) -> list[dict]:
             try:
                 msg = json.loads(line)
             except json.JSONDecodeError:
-                print(f"    警告: 跳过无效 JSON 行 {len(messages)+1}", file=sys.stderr)
                 continue
             if not is_noise_message(msg):
                 messages.append(msg)
@@ -69,33 +114,51 @@ def load_transcript(path: str) -> list[dict]:
 # 2. 文本提取
 # ---------------------------------------------------------------------------
 
+
 def extract_text(msg: dict) -> str:
-    """从消息中提取可读文本。"""
-    content = msg.get("content", "")
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for block in content:
-            if isinstance(block, dict):
-                t = block.get("text", "")
-                if t:
-                    parts.append(t)
-                if block.get("type") == "tool_use":
-                    name = block.get("name", "")
-                    inp = block.get("input", {})
-                    parts.append(f"[tool_use: {name}] {json.dumps(inp, ensure_ascii=False)}")
-                if block.get("type") == "tool_result":
-                    parts.append(f"[tool_result] {block.get('content','')}")
-        return "\n".join(parts)
-    return str(content)
+    """从消息中提取可读文本，跳过 thinking 块。"""
+    blocks = _message_content(msg)
+    if not blocks:
+        return ""
+
+    parts = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        block_type = block.get("type", "")
+
+        # 跳过 thinking
+        if block_type in _NOISE_BLOCKS:
+            continue
+
+        # 文本块
+        if block_type == "text":
+            t = block.get("text", "")
+            if t:
+                parts.append(t)
+
+        # 工具调用
+        elif block_type == "tool_use":
+            name = block.get("name", "")
+            inp = block.get("input", {})
+            parts.append(f"[tool_use: {name}] {json.dumps(inp, ensure_ascii=False)}")
+
+        # 工具结果（可能很长，截断）
+        elif block_type == "tool_result":
+            content = block.get("content", "")
+            if isinstance(content, str) and len(content) > 2000:
+                content = content[:2000] + "\n... [truncated]"
+            parts.append(f"[tool_result] {content}")
+
+    return "\n".join(parts)
 
 
 def format_msg(msg: dict, idx: int) -> str:
     """格式化单条消息为可读文本。"""
-    role = msg.get("role", "unknown")
+    role = _message_role(msg)
     text = extract_text(msg)
-    # 不截断，保留完整内容让 Ingest 管线处理
+    if not text.strip():
+        return ""
     return f"## [{idx}] {role}\n\n{text}\n"
 
 
@@ -120,7 +183,9 @@ def build_markdown(messages: list[dict], project: str, domain: str, today: str) 
     ]
 
     for i, msg in enumerate(messages):
-        parts.append(format_msg(msg, i))
+        formatted = format_msg(msg, i)
+        if formatted:
+            parts.append(formatted)
 
     return "\n".join(parts)
 

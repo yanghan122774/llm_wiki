@@ -67,6 +67,12 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreated }: C
       const template = getTemplate(selectedTemplate)
       await writeFile(`${pp}/schema.md`, template.schema)
       await writeFile(`${pp}/purpose.md`, template.purpose)
+      if (template.index) {
+        await writeFile(`${pp}/wiki/index.md`, template.index)
+      }
+      if (template.overview) {
+        await writeFile(`${pp}/wiki/overview.md`, template.overview)
+      }
       for (const dir of template.extraDirs) {
         await createDirectory(`${pp}/${dir}`)
       }

@@ -1,3 +1,13 @@
+/** Wiki sub-directories shared by general-purpose templates. */
+const BASE_DIRS = [
+  "wiki/entities",
+  "wiki/concepts",
+  "wiki/sources",
+  "wiki/queries",
+  "wiki/comparisons",
+  "wiki/synthesis",
+]
+
 export interface WikiTemplate {
   id: string
   name: string
@@ -6,6 +16,10 @@ export interface WikiTemplate {
   schema: string
   purpose: string
   extraDirs: string[]
+  /** Optional: overwrite wiki/index.md with template-specific stub. */
+  index?: string
+  /** Optional: overwrite wiki/overview.md with template-specific content. */
+  overview?: string
 }
 
 const BASE_SCHEMA_TYPES = `| entity | wiki/entities/ | Named things (people, tools, organizations, datasets) |
@@ -71,7 +85,12 @@ const researchTemplate: WikiTemplate = {
   name: "Research",
   description: "Deep-dive research with hypothesis tracking and methodology notes",
   icon: "🔬",
-  extraDirs: ["wiki/methodology", "wiki/findings", "wiki/thesis"],
+  extraDirs: [
+    ...BASE_DIRS,
+    "wiki/methodology",
+    "wiki/findings",
+    "wiki/thesis",
+  ],
   schema: `# Wiki Schema — Research Deep-Dive
 
 ## Page Types
@@ -191,7 +210,13 @@ const readingTemplate: WikiTemplate = {
   name: "Reading",
   description: "Track a book's characters, themes, plot threads, and chapter notes",
   icon: "📚",
-  extraDirs: ["wiki/characters", "wiki/themes", "wiki/plot-threads", "wiki/chapters"],
+  extraDirs: [
+    ...BASE_DIRS,
+    "wiki/characters",
+    "wiki/themes",
+    "wiki/plot-threads",
+    "wiki/chapters",
+  ],
   schema: `# Wiki Schema — Reading a Book
 
 ## Page Types
@@ -308,7 +333,13 @@ const personalTemplate: WikiTemplate = {
   name: "Personal Growth",
   description: "Track goals, habits, reflections, and journal entries for self-improvement",
   icon: "🌱",
-  extraDirs: ["wiki/goals", "wiki/habits", "wiki/reflections", "wiki/journal"],
+  extraDirs: [
+    ...BASE_DIRS,
+    "wiki/goals",
+    "wiki/habits",
+    "wiki/reflections",
+    "wiki/journal",
+  ],
   schema: `# Wiki Schema — Personal Growth
 
 ## Page Types
@@ -436,7 +467,13 @@ const businessTemplate: WikiTemplate = {
   name: "Business",
   description: "Manage meetings, decisions, projects, and stakeholder context for a team",
   icon: "💼",
-  extraDirs: ["wiki/meetings", "wiki/decisions", "wiki/projects", "wiki/stakeholders"],
+  extraDirs: [
+    ...BASE_DIRS,
+    "wiki/meetings",
+    "wiki/decisions",
+    "wiki/projects",
+    "wiki/stakeholders",
+  ],
   schema: `# Wiki Schema — Business / Team
 
 ## Page Types
@@ -575,6 +612,50 @@ const experienceTemplate: WikiTemplate = {
   description: "Capture bugs, decisions, how-tos, agent errors, patterns, and templates from development sessions",
   icon: "🧠",
   extraDirs: ["wiki/bugs", "wiki/decisions", "wiki/howto", "wiki/agent-errors", "wiki/patterns", "wiki/templates"],
+  index: `# Wiki Index
+
+## Bugs
+
+## Decisions
+
+## How-To
+
+## Agent Errors
+
+## Patterns
+
+## Templates
+`,
+  overview: `# Project Experience Overview
+
+<!-- What project does this experience wiki track? What domain / tech stack? -->
+<!-- Update this overview as patterns emerge across experience pages. -->
+
+## Tracked Project
+
+**Repository:**
+**Domain:**
+**Start date:**
+
+## Experience Summary
+
+| Type | Count | Key Themes |
+|------|-------|------------|
+| Bugs | — | |
+| Decisions | — | |
+| How-To | — | |
+| Agent Errors | — | |
+| Patterns | — | |
+| Templates | — | |
+
+## Most-Cited Pages
+
+<!-- Pages that are referenced most often — these represent core project knowledge. -->
+
+## Open Issues
+
+<!-- Recurring problems not yet resolved or captured as pattern pages. -->
+`,
   schema: `# Wiki Schema — Project Experience
 
 ## Page Types
@@ -699,7 +780,7 @@ const generalTemplate: WikiTemplate = {
   name: "General",
   description: "Minimal setup — a blank slate for any purpose",
   icon: "📄",
-  extraDirs: [],
+  extraDirs: [...BASE_DIRS],
   schema: `# Wiki Schema
 
 ## Page Types

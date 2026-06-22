@@ -390,4 +390,19 @@ describe("buildGenerationPrompt experience mode", () => {
     expect(prompt).not.toMatch(/An updated wiki\/index\.md/)
     expect(prompt).not.toMatch(/A log entry for wiki\/log\.md/)
   })
+
+  it("tells LLM to prioritize [EXP] markers in generation", () => {
+    const prompt = buildGenerationPrompt(
+      "", "", "", "x.md", undefined, "", undefined, true, expMeta,
+    )
+    expect(prompt).toContain("[EXP] markers")
+    expect(prompt).toContain("manually flagged by the user")
+  })
+
+  it("tells LLM to look for [EXP] markers in analysis (experience mode)", () => {
+    const prompt = buildAnalysisPrompt("", "", "", true, expMeta)
+    expect(prompt).toContain("Manually Flagged Experiences")
+    expect(prompt).toContain("[EXP] markers")
+    expect(prompt).toContain("high-priority")
+  })
 })

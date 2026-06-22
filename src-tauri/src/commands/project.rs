@@ -20,23 +20,11 @@ fn create_project_impl(name: String, path: String) -> Result<WikiProject, String
         return Err(format!("Directory already exists: '{}'", root.display()));
     }
 
-    // Create all required subdirectories
-    let dirs = [
-        "raw/sources",
-        "raw/assets",
-        "wiki/entities",
-        "wiki/concepts",
-        "wiki/sources",
-        "wiki/queries",
-        "wiki/comparisons",
-        "wiki/synthesis",
-        "wiki/bugs",
-        "wiki/decisions",
-        "wiki/howto",
-        "wiki/agent-errors",
-        "wiki/patterns",
-        "wiki/templates",
-    ];
+    // Create only truly universal directories.
+    // Wiki sub-directories (entities/, bugs/, decisions/, …) are
+    // owned by frontend templates so every template only gets the
+    // directories its schema declares — no stale empty folders.
+    let dirs = ["raw/sources", "raw/assets"];
     for dir in &dirs {
         fs::create_dir_all(root.join(dir))
             .map_err(|e| format!("Failed to create directory '{}': {}", dir, e))?;
