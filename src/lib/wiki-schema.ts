@@ -44,7 +44,7 @@ export function parseWikiSchemaRouting(markdown: string): WikiSchemaRouting {
   return { typeDirs }
 }
 
-function pageTypesSectionLines(markdown: string): string[] {
+export function pageTypesSectionLines(markdown: string): string[] {
   const lines = markdown.split("\n")
   const start = lines.findIndex((line) => {
     const match = line.trim().match(/^(#{1,6})\s+(.+?)\s*#*$/)

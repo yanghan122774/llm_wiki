@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   parseWikiSchemaRouting,
+  pageTypesSectionLines,
   validateWikiPageRouting,
 } from "./wiki-schema"
 
@@ -15,6 +16,66 @@ const SCHEMA = `# Wiki Schema
 | method | wiki/methods/ | Methods |
 | overview | wiki/ | Top-level overview |
 `
+
+describe("pageTypesSectionLines", () => {
+  it("extracts lines under ## Page Types heading", () => {
+    const md = [
+      "# Wiki",
+      "",
+      "## Page Types",
+      "",
+      "| Type | Directory |",
+      "|------|-----------|",
+      "| bug | wiki/bugs/ |",
+      "| decision | wiki/decisions/ |",
+      "",
+      "## Other Section",
+    ].join("\n")
+
+    const lines = pageTypesSectionLines(md)
+    // Returns all raw lines after the heading (including blanks)
+    expect(lines.length).toBeGreaterThanOrEqual(4)
+    expect(lines.some((l) => l.includes("| bug |"))).toBe(true)
+    expect(lines.some((l) => l.includes("| decision |"))).toBe(true)
+    // Does not include lines from later sections
+    expect(lines.some((l) => l.includes("Other"))).toBe(false)
+  })
+
+  it("returns empty array when there is no Page Types section", () => {
+    const lines = pageTypesSectionLines("# Just a heading\n\nSome text")
+    expect(lines).toEqual([])
+  })
+
+  it("stops at a heading of equal or lower level", () => {
+    const md = [
+      "## Page Types",
+      "",
+      "| Type | Directory |",
+      "|------|-----------|",
+      "| bug | wiki/bugs/ |",
+      "",
+      "## Other Section",
+      "| orphan | wiki/orphans/ |",
+    ].join("\n")
+
+    const lines = pageTypesSectionLines(md)
+    expect(lines.some((l) => l.includes("orphan"))).toBe(false)
+    expect(lines.some((l) => l.includes("bug"))).toBe(true)
+  })
+
+  it("handles Body Sections column (4th column)", () => {
+    const md = [
+      "## Page Types",
+      "",
+      "| Type | Directory | Description | Body Sections |",
+      "|------|-----------|-------------|---------------|",
+      "| bug | wiki/bugs/ | Defects | 现象; 根因; 解决方案 |",
+    ].join("\n")
+
+    const lines = pageTypesSectionLines(md)
+    expect(lines.some((l) => l.includes("现象"))).toBe(true)
+  })
+})
 
 describe("parseWikiSchemaRouting", () => {
   it("extracts type directories from the Page Types table", () => {
