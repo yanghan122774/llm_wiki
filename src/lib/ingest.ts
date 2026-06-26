@@ -2072,8 +2072,13 @@ export function buildGenerationPrompt(
   sourceSummaryPath?: string,
   isExperience: boolean = false,
   experienceMeta?: { project: string; domain: string },
+  experienceTypes?: ExperienceType[],
 ): string {
-  // Use original filename (without extension) as the source summary page name
+  // Resolve experience types: explicit arg > parse from schema > default
+  const resolvedExpTypes =
+    experienceTypes ??
+    (isExperience ? parseExperienceTypesFromSchema(schema) : undefined)
+  const expTypeNames = resolvedExpTypes?.map((t) => t.type) ?? []
   const sourceBaseName = sourceFileName.replace(/\.[^.]+$/, "")
   const summaryPath = sourceSummaryPath ?? `wiki/sources/${sourceBaseName}.md`
   const today = currentWikiDate()
@@ -2111,21 +2116,38 @@ export function buildGenerationPrompt(
           "",
           "### PHASE A (MANDATORY — emit FIRST, before any aggregate pages)",
           "",
-          "Generate ONE FILE block PER experience found. Every distinct bug, decision,",
-          "how-to, agent-error, pattern, or template gets its own FILE block.",
+          `Generate ONE FILE block PER experience found. Every distinct ${expTypeNames.join(", ")} gets its own FILE block.`,
           "",
-          "1. **bug** pages → wiki/bugs/<slug>.md",
-          "   Structure: ## 现象 → ## 根因 → ## 解决方案 → ## 预防措施",
-          "2. **decision** pages → wiki/decisions/<slug>.md",
-          "   Structure: ## 背景 → ## 考虑的方案 → ## 决策 → ## 后果",
-          "3. **howto** pages → wiki/howto/<slug>.md",
-          "   Structure: ## 目的 → ## 前置条件 → ## 步骤 → ## 验证",
-          "4. **agent-error** pages → wiki/agent-errors/<slug>.md",
-          "   Structure: ## 错误行为 → ## 纠正方式 → ## 触发特征 → ## 预防",
-          "5. **pattern** pages → wiki/patterns/<slug>.md",
-          "   Use ONLY when ≥2 related bugs share a root cause. Include ## 证据 section.",
-          "6. **template** pages → wiki/templates/<slug>.md",
-          "   Structure: ## 适用范围 → ## 检查清单 → ## 常见坑点",
+          ...(resolvedExpTypes && resolvedExpTypes.length > 0
+            ? resolvedExpTypes.flatMap((et, i) => {
+                const header = `${i + 1}. **${et.type}** pages → ${et.directory}/<slug>.md`
+                if (et.bodySections.length > 0) {
+                  const structure = et.bodySections.map((s) => `## ${s}`).join(" → ")
+                  return [
+                    header,
+                    `   Structure: ${structure}`,
+                  ]
+                }
+                return [
+                  header,
+                  "   Structure: 请根据内容自行决定合适的章节结构",
+                ]
+              })
+            : [
+                "1. **bug** pages → wiki/bugs/<slug>.md",
+                "   Structure: ## 现象 → ## 根因 → ## 解决方案 → ## 预防措施",
+                "2. **decision** pages → wiki/decisions/<slug>.md",
+                "   Structure: ## 背景 → ## 考虑的方案 → ## 决策 → ## 后果",
+                "3. **howto** pages → wiki/howto/<slug>.md",
+                "   Structure: ## 目的 → ## 前置条件 → ## 步骤 → ## 验证",
+                "4. **agent-error** pages → wiki/agent-errors/<slug>.md",
+                "   Structure: ## 错误行为 → ## 纠正方式 → ## 触发特征 → ## 预防",
+                "5. **pattern** pages → wiki/patterns/<slug>.md",
+                "   Use ONLY when ≥2 related bugs share a root cause. Include ## 证据 section.",
+                "6. **template** pages → wiki/templates/<slug>.md",
+                "   Structure: ## 适用范围 → ## 检查清单 → ## 常见坑点",
+              ]
+          ),
           "",
           "Do NOT create wiki/sources/ pages — this source type doesn't need them.",
           'If the source contains [EXP] markers, generate those pages FIRST —',
@@ -2159,7 +2181,7 @@ export function buildGenerationPrompt(
           "### OUTPUT ORDER (STRICT — deviations cause missing pages)",
           "",
           "Your response MUST follow this exact sequence:",
-          "1. Phase A FILE blocks (bug → decision → howto → agent-error → pattern → template)",
+          `1. Phase A FILE blocks (${expTypeNames.join(" → ")})`,
           "2. Phase B FILE blocks (index → log → overview)",
           "",
           "NEVER emit an index that references pages you haven't created. If you have",
@@ -2206,7 +2228,7 @@ export function buildGenerationPrompt(
     "",
     "Required fields and types:",
     isExperience
-      ? `  • type     — MUST be one of: ${EXPERIENCE_TYPES.join(" | ")}. Using "source", "entity", "concept", or any other non-experience type WILL be rejected.`
+      ? `  • type     — MUST be one of: ${expTypeNames.join(" | ")}. Using "source", "entity", "concept", or any other non-experience type WILL be rejected.`
       : `  • type     — one of the known types (${GENERATION_WIKI_TYPES.join(" | ")}), or a custom type explicitly defined by the project schema`,
     "  • title    — string (quote it if it contains a colon, e.g. `title: \"Foo: Bar\"`)",
     `  • created  — ${today} for new pages (YYYY-MM-DD, no quotes)`,
