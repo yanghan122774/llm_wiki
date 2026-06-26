@@ -100,11 +100,8 @@ export function parseExperienceTypesFromSchema(markdown: string): ExperienceType
       continue
     }
 
-    // Skip if we haven't passed the header yet and cells look like headers
+    // Skip header row (Type | Directory | Description columns)
     if (bodySectionsCol === -1 && cells.some((c) => /^(type|directory|description)$/i.test(c))) {
-      // Check if this row has a "Body Sections" column
-      const bsIdx = cells.findIndex((c) => /^body\s*sections?$/i.test(c))
-      if (bsIdx >= 0) bodySectionsCol = bsIdx
       continue
     }
 
