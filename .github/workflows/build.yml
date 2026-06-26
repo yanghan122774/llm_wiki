@@ -67,6 +67,17 @@ jobs:
           # bundle cleanly regardless of future image drift.
           sudo apt-get install -y libwebkit2gtk-${{ matrix.webkit_ver }}-dev libappindicator3-dev librsvg2-dev patchelf protobuf-compiler xdg-utils
 
+      # Tauri v2 defaults to linux-ipc-protocol which requires
+      # webkit2gtk-4.1. The Ubuntu 20.04 compat build links against
+      # webkit2gtk-4.0, so we disable default features so tauri-build
+      # picks up webkit2gtk-4.0 via pkg-config.
+      - name: Switch to webkit2gtk 4.0 linkage (Ubuntu 20.04 compat)
+        if: matrix.deb_label
+        run: |
+          sed -i 's/^tauri = { version = "2", features = /tauri = { version = "2", default-features = false, features = /' src-tauri/Cargo.toml
+          echo "Patched Cargo.toml tauri dependency:"
+          grep '^tauri = ' src-tauri/Cargo.toml
+
       # The repo ships pre-downloaded PDFium binaries under
       # src-tauri/pdfium/ for every supported architecture
       # (libpdfium.so = x86_64, libpdfium-arm64.so = aarch64,
