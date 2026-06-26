@@ -36,6 +36,7 @@ import {
 import { captionMarkdownImages, loadCaptionCache } from "@/lib/image-caption-pipeline"
 import type { MultimodalConfig } from "@/stores/wiki-store"
 import { GENERATION_WIKI_TYPES } from "@/lib/wiki-page-types"
+import { pageTypesSectionLines } from "@/lib/wiki-schema"
 import { computeContextBudget } from "@/lib/context-budget"
 
 /** 经验类型列表 —— 用于 Ingest 管线检测到经验源时切换 prompt */
@@ -47,6 +48,112 @@ export const EXPERIENCE_TYPES = [
   "pattern",
   "template",
 ] as const
+
+/** Experience type descriptor parsed from schema.md Page Types table. */
+export interface ExperienceType {
+  type: string
+  /** Wiki directory (no trailing slash), e.g. "wiki/bugs" */
+  directory: string
+  /**
+   * Section headings for the page body, in order.
+   * Empty array means the LLM should decide the structure itself.
+   */
+  bodySections: string[]
+}
+
+/** Fallback used when schema.md has no Page Types table. */
+export const DEFAULT_EXPERIENCE_TYPES: ExperienceType[] = [
+  { type: "bug",         directory: "wiki/bugs",         bodySections: ["现象", "根因", "解决方案", "预防"] },
+  { type: "decision",    directory: "wiki/decisions",    bodySections: ["背景", "方案对比", "决策", "后果"] },
+  { type: "howto",       directory: "wiki/howto",        bodySections: ["目的", "前置条件", "步骤", "验证"] },
+  { type: "agent-error", directory: "wiki/agent-errors", bodySections: ["错误行为", "纠正方式", "触发特征", "预防"] },
+  { type: "pattern",     directory: "wiki/patterns",     bodySections: [] },  // LLM自行发挥—需要≥2条证据
+  { type: "template",    directory: "wiki/templates",    bodySections: ["适用范围", "检查清单", "常见坑点"] },
+]
+
+/**
+ * Parse experience types from a schema.md markdown string.
+ *
+ * Reads the "## Page Types" table, extracting Type, Directory, and
+ * optional Body Sections (4th column, semicolon-delimited).
+ *
+ * Returns DEFAULT_EXPERIENCE_TYPES when the schema has no Page Types
+ * section or no valid rows are found.
+ */
+export function parseExperienceTypesFromSchema(markdown: string): ExperienceType[] {
+  if (!markdown || !markdown.trim()) return DEFAULT_EXPERIENCE_TYPES
+
+  const lines = pageTypesSectionLines(markdown)
+  if (lines.length === 0) return DEFAULT_EXPERIENCE_TYPES
+
+  // Detect header row to find the Body Sections column index.
+  // We look for the first table row that looks like a header separator
+  // (|---|---|...) or a header with column names.
+  let bodySectionsCol = -1 // -1 means "not present"
+  const result: ExperienceType[] = []
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed.startsWith("|")) continue
+
+    // Skip separator lines like |---|...---|---|
+    if (/^\|[\s\-:|]+\|$/.test(trimmed)) continue
+
+    const cells = trimmed
+      .split("|")
+      .slice(1, -1)
+      .map((cell) => cell.trim())
+
+    // Detect header row
+    if (cells.some((c) => /^body\s*sections?$/i.test(c))) {
+      bodySectionsCol = cells.findIndex((c) => /^body\s*sections?$/i.test(c))
+      continue
+    }
+
+    // Skip if we haven't passed the header yet and cells look like headers
+    if (bodySectionsCol === -1 && cells.some((c) => /^(type|directory|description)$/i.test(c))) {
+      // Check if this row has a "Body Sections" column
+      const bsIdx = cells.findIndex((c) => /^body\s*sections?$/i.test(c))
+      if (bsIdx >= 0) bodySectionsCol = bsIdx
+      continue
+    }
+
+    if (cells.length < 2) continue
+
+    const type = cells[0]
+    const dir = cells[1]
+
+    // Validate type and directory
+    if (!/^[a-z][a-z0-9_-]*$/i.test(type)) {
+      console.warn(`[ingest] schema Page Types: skipping invalid type "${type}"`)
+      continue
+    }
+    if (dir !== "wiki" && !dir.startsWith("wiki/")) {
+      console.warn(`[ingest] schema Page Types: skipping invalid directory "${dir}" for type "${type}"`)
+      continue
+    }
+
+    // Parse optional Body Sections (4th column if present)
+    let bodySections: string[] = []
+    if (bodySectionsCol >= 0 && cells.length > bodySectionsCol) {
+      const raw = cells[bodySectionsCol]
+      if (raw) {
+        bodySections = raw
+          .split(/[;；]/)  // support both ASCII and fullwidth semicolons
+          .map((s) => s.trim())
+          .filter(Boolean)
+      }
+    }
+
+    result.push({
+      type,
+      directory: dir.replace(/\/+$/, ""), // strip trailing slash
+      bodySections,
+    })
+  }
+
+  return result.length > 0 ? result : DEFAULT_EXPERIENCE_TYPES
+}
 
 /**
  * 判断源文件是否应走经验提取路径。
