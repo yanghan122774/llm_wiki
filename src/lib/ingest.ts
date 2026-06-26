@@ -39,16 +39,6 @@ import { GENERATION_WIKI_TYPES } from "@/lib/wiki-page-types"
 import { pageTypesSectionLines } from "@/lib/wiki-schema"
 import { computeContextBudget } from "@/lib/context-budget"
 
-/** 经验类型列表 —— 用于 Ingest 管线检测到经验源时切换 prompt */
-export const EXPERIENCE_TYPES = [
-  "bug",
-  "decision",
-  "howto",
-  "agent-error",
-  "pattern",
-  "template",
-] as const
-
 /** Experience type descriptor parsed from schema.md Page Types table. */
 export interface ExperienceType {
   type: string
