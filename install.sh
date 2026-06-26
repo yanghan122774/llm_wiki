@@ -140,22 +140,36 @@ esac
 echo ""
 echo "  检查系统依赖..."
 
-MISSING=""
+MISSING_PKGS=""
 
-# Check for libwebkit2gtk (Tauri WebView)
-if ! ldconfig -p 2>/dev/null | grep -q "libwebkit2gtk-4.1" && \
-   ! ldconfig -p 2>/dev/null | grep -q "libwebkit2gtk-4.0"; then
-  MISSING="$MISSING libwebkit2gtk-4.1-0"
+# Check for libwebkit2gtk (Tauri WebView).
+# Ubuntu 22.04 → libwebkit2gtk-4.0-37, Ubuntu 24.04+ → libwebkit2gtk-4.1-0
+HAVE_WEBKIT=0
+if ldconfig -p 2>/dev/null | grep -q "libwebkit2gtk-4.1"; then HAVE_WEBKIT=1; fi
+if ldconfig -p 2>/dev/null | grep -q "libwebkit2gtk-4.0"; then HAVE_WEBKIT=1; fi
+
+if [ "$HAVE_WEBKIT" -eq 0 ]; then
+  # Detect Ubuntu version to pick the right package name
+  if command -v lsb_release &>/dev/null; then
+    UBUNTU_VERSION=$(lsb_release -rs 2>/dev/null)
+    if [ -n "$UBUNTU_VERSION" ] && [ "$(echo "$UBUNTU_VERSION" | cut -d. -f1)" -ge 24 ]; then
+      MISSING_PKGS="$MISSING_PKGS libwebkit2gtk-4.1-0"
+    else
+      MISSING_PKGS="$MISSING_PKGS libwebkit2gtk-4.0-37"
+    fi
+  else
+    MISSING_PKGS="$MISSING_PKGS libwebkit2gtk-4.0-37"
+  fi
 fi
 
 # Check for libfuse2 (AppImage runtime)
 if [ "$PKG_TYPE" = "AppImage" ] && ! ldconfig -p 2>/dev/null | grep -q "libfuse" && ! command -v fusermount &>/dev/null; then
-  MISSING="$MISSING libfuse2"
+  MISSING_PKGS="$MISSING_PKGS libfuse2"
 fi
 
-if [ -n "$MISSING" ]; then
-  echo -e "  ${YELLOW}⚠ 可能缺少依赖:${MISSING}${NC}"
-  echo "  安装命令: sudo apt-get install -y$MISSING"
+if [ -n "$MISSING_PKGS" ]; then
+  echo -e "  ${YELLOW}⚠ 可能缺少依赖:${MISSING_PKGS}${NC}"
+  echo "  安装命令: sudo apt-get install -y$MISSING_PKGS"
 else
   echo -e "  ${GREEN}✓ 系统依赖检查通过${NC}"
 fi
