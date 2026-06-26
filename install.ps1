@@ -26,10 +26,20 @@ if (-not $IsAdmin) {
     Write-Host "  ⚠ 需要管理员权限才能安装 .msi" -ForegroundColor Yellow
     Write-Host "  正在请求管理员权限..." -ForegroundColor Yellow
 
-    # Re-launch as admin
-    $ScriptPath = Join-Path $env:TEMP "llm-wiki-install.ps1"
-    Copy-Item $PSCommandPath $ScriptPath -Force
-    Start-Process PowerShell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -File `"$ScriptPath`""
+    # Save this script to a temp file so we can re-launch as admin.
+    # $PSCommandPath is empty when piped via irm | iex, so we write
+    # the script source from $MyInvocation — for piped execution we
+    # fall back to re-downloading from GitHub raw.
+    $ElevatedScript = Join-Path $env:TEMP "llm-wiki-install.ps1"
+
+    if ($PSCommandPath) {
+        Copy-Item $PSCommandPath $ElevatedScript -Force
+    } else {
+        # Piped execution (irm | iex): re-download the script to a temp file
+        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/yanghan122774/llm_wiki/main/install.ps1" -OutFile $ElevatedScript
+    }
+
+    Start-Process PowerShell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -File `"$ElevatedScript`""
     exit 0
 }
 
