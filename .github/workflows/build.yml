@@ -21,11 +21,22 @@ jobs:
           - platform: ubuntu-22.04
             args: ''
             rust_target: ''
+            webkit_ver: '4.1'
+          # Compat build linked against webkit2gtk 4.0 so the .deb
+          # depends on libwebkit2gtk-4.0-37, which is available on
+          # Ubuntu 20.04 (GLIBC 2.31). The primary 4.1 build above
+          # requires Ubuntu 22.04+.
+          - platform: ubuntu-22.04
+            args: ''
+            rust_target: ''
+            webkit_ver: '4.0'
+            deb_label: 'ubuntu-20.04'
           # GitHub-hosted ARM Linux runner (free for public repos
           # since 2024). Native build — no cross-compile of webkit2gtk.
           - platform: ubuntu-22.04-arm
             args: ''
             rust_target: ''
+            webkit_ver: '4.1'
           - platform: windows-latest
             args: ''
             rust_target: ''
@@ -46,7 +57,7 @@ jobs:
         run: brew install protobuf
 
       - name: Install dependencies (Ubuntu)
-        if: startsWith(matrix.platform, 'ubuntu-22.04')
+        if: matrix.webkit_ver != ''
         run: |
           sudo apt-get update
           # xdg-utils provides /usr/bin/xdg-open, which Tauri's
@@ -54,7 +65,7 @@ jobs:
           # Pre-installed on the x86_64 runner image but NOT on
           # the ARM64 image — list it explicitly so both arches
           # bundle cleanly regardless of future image drift.
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf protobuf-compiler xdg-utils
+          sudo apt-get install -y libwebkit2gtk-${{ matrix.webkit_ver }}-dev libappindicator3-dev librsvg2-dev patchelf protobuf-compiler xdg-utils
 
       # The repo ships pre-downloaded PDFium binaries under
       # src-tauri/pdfium/ for every supported architecture
@@ -107,12 +118,31 @@ jobs:
           # empty so tauri-action skips the release-upload step and
           # just produces bundle artifacts — useful for testing a
           # branch build without polluting the Releases page.
-          tagName: ${{ github.event_name == 'push' && github.ref_name || '' }}
-          releaseName: ${{ github.event_name == 'push' && format('LLM Wiki {0}', github.ref_name) || '' }}
+          # The ubuntu-20.04 compat build produces a .deb with the same
+          # filename as the primary build. Skip tauri-action's auto-upload
+          # for it and handle the upload manually in the next step.
+          tagName: ${{ github.event_name == 'push' && !matrix.deb_label && github.ref_name || '' }}
+          releaseName: ${{ github.event_name == 'push' && !matrix.deb_label && format('LLM Wiki {0}', github.ref_name) || '' }}
           releaseBody: 'See the assets below for download links.'
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+      # Ubuntu 20.04 compat build: rename .deb to include "ubuntu-20.04"
+      # so it can coexist with the primary .deb on the release page,
+      # then upload it manually (tauri-action skipped it above).
+      - name: Upload Ubuntu 20.04 compat .deb
+        if: matrix.deb_label && github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DEB_DIR="src-tauri/target/release/bundle/deb"
+          DEB=$(ls "$DEB_DIR"/*.deb | head -1)
+          # llm-wiki_0.5.0_amd64.deb → llm-wiki_0.5.0_ubuntu-20.04_amd64.deb
+          NEW_DEB="${DEB/_amd64.deb/_${{ matrix.deb_label }}_amd64.deb}"
+          cp "$DEB" "$NEW_DEB"
+          echo "Uploading $NEW_DEB"
+          gh release upload "${{ github.ref_name }}" "$NEW_DEB"
 
       # On workflow_dispatch, no release is created, so the bundles
       # would otherwise be discarded with the runner. Upload them as
@@ -123,7 +153,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: bundle-${{ matrix.platform }}
+          name: bundle-${{ matrix.platform }}${{ matrix.deb_label && format('-{0}', matrix.deb_label) || '' }}
           # Glob covers both targeted (e.g.
           # target/aarch64-apple-darwin/release/...) and default
           # (target/release/...) build paths.

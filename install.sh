@@ -35,8 +35,23 @@ if [ -n "${WAYLAND_DISPLAY:-}" ] || [ -n "${DISPLAY:-}" ]; then
   HAS_GUI=1
 fi
 
+# ── 2b. Check GLIBC version ──
+# AppImage bundles WebKit built against newer GLIBC. Systems with
+# GLIBC < 2.32 (Ubuntu 20.04, Debian 10/11) must use .deb instead.
+GLIBC_OK=1
+if command -v ldd &>/dev/null; then
+  GLIBC_VER=$(ldd --version 2>/dev/null | head -1 | grep -oP '\d+\.\d+' | head -1)
+  if [ -n "$GLIBC_VER" ] && [ "$(printf '%s\n' "2.32" "$GLIBC_VER" | sort -V | head -1)" != "2.32" ]; then
+    GLIBC_OK=0
+  fi
+fi
+
 if [ "$HAS_GUI" -eq 1 ]; then
-  echo -e "  环境: ${GREEN}图形界面${NC}（优先 AppImage）"
+  if [ "$GLIBC_OK" -eq 1 ]; then
+    echo -e "  环境: ${GREEN}图形界面${NC}（优先 AppImage）"
+  else
+    echo -e "  环境: ${YELLOW}图形界面（GLIBC 过旧，改用 deb）${NC}"
+  fi
 else
   echo -e "  环境: ${YELLOW}终端${NC}（使用 deb 包）"
 fi
@@ -57,15 +72,22 @@ echo -e "  最新版本: ${GREEN}$VERSION${NC}"
 # ── 4. Find download URL ──
 URL=""
 
-if [ "$HAS_GUI" -eq 1 ]; then
-  # Prefer AppImage for GUI systems
+if [ "$HAS_GUI" -eq 1 ] && [ "$GLIBC_OK" -eq 1 ]; then
+  # Prefer AppImage for modern GUI systems
   URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url": "[^"]*'"$DEB_ARCH"'[^"]*\.AppImage"' | head -1 | cut -d'"' -f4)
   PKG_TYPE="AppImage"
 fi
 
 if [ -z "$URL" ]; then
-  # Fall back to .deb
-  URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url": "[^"]*'"$DEB_ARCH"'[^"]*\.deb"' | head -1 | cut -d'"' -f4)
+  # Fall back to .deb. If the system is too old for AppImage
+  # (GLIBC < 2.32), pick the ubuntu-20.04 compat build which
+  # depends on libwebkit2gtk-4.0-37 instead of 4.1.
+  if [ "$GLIBC_OK" -eq 0 ]; then
+    URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url": "[^"]*ubuntu-20.04[^"]*\.deb"' | head -1 | cut -d'"' -f4)
+  fi
+  if [ -z "$URL" ]; then
+    URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url": "[^"]*'"$DEB_ARCH"'[^"]*\.deb"' | grep -v 'ubuntu-20.04' | head -1 | cut -d'"' -f4)
+  fi
   PKG_TYPE="deb"
 fi
 
