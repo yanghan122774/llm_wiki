@@ -1108,7 +1108,7 @@ async function autoIngestImpl(
   // models on experience-extraction tasks). Surface these as
   // warnings so the user knows pages are missing.
   if (sourceIsExperience && writtenPaths.length > 0 && !signal?.aborted) {
-    const danglingWarnings = await detectDanglingWikilinks(pp, writtenPaths)
+    const danglingWarnings = await detectDanglingWikilinks(pp, writtenPaths, schema)
     writeWarnings.push(...danglingWarnings)
   }
 
@@ -1430,9 +1430,15 @@ function isAggregateRepairSafe(
 async function detectDanglingWikilinks(
   projectPath: string,
   writtenPaths: string[],
+  schema?: string,
 ): Promise<string[]> {
   const warnings: string[] = []
   const pp = normalizePath(projectPath)
+
+  // Resolve experience directories from schema (with hardcoded fallback)
+  const expDirs = schema
+    ? parseExperienceTypesFromSchema(schema).map((et) => et.directory)
+    : DEFAULT_EXPERIENCE_TYPES.map((et) => et.directory)
 
   // Collect every wikilink slug from the newly written index / log.
   // Matches [[slug]] and [[slug|label]] variants.
@@ -1456,16 +1462,6 @@ async function detectDanglingWikilinks(
 
   // Build the set of files that exist: written this run OR already on disk.
   const existingFileSet = new Set(writtenPaths.map((p) => normalizePath(p)))
-
-  // Experience page directories to check against each slug.
-  const expDirs = [
-    "wiki/bugs",
-    "wiki/decisions",
-    "wiki/howto",
-    "wiki/agent-errors",
-    "wiki/patterns",
-    "wiki/templates",
-  ]
 
   for (const slug of referencedSlugs) {
     // Check whether any matching file already exists (in written set
