@@ -100,14 +100,22 @@ curl -fsSL https://raw.githubusercontent.com/yanghan122774/llm_wiki/main/install
 
 ---
 
-## 三、文件清单
+## 三、发布准备
+
+### 3.1 当前 release 与 CI 状态
+
+`v0.4.24` 是当前最新 release，但其 CI **没有** MCP Server 构建步骤——安装包里不含 `mcp-server/dist/`。自 commit `757f737` 起 CI 已加入 MCP Server 构建，下次打 tag 的产物才自包含。
+
+**实现本方案前需打 `v0.5.0`（或以上）**，确保安装脚本拉到的 release 是完整的。
+
+### 3.2 文件清单
 
 | 文件 | 动作 | 说明 |
 |------|------|------|
 | `install.sh` | **新增** | Linux 一键安装脚本 |
 | `install.ps1` | **新增** | Windows 一键安装脚本 |
 | `部署指南.md` | **重写** | 精简为安装指南，源码编译为次要内容 |
-| `.github/workflows/build.yml` | **不改** | 已满足需求 |
+| `.github/workflows/build.yml` | **不改** | CI 已满足需求（MCP Server + Tauri 打包） |
 | `agent-setup-guide.md` | **不改** | 集成配置走这个 |
 
 ## 四、风险
@@ -118,7 +126,7 @@ curl -fsSL https://raw.githubusercontent.com/yanghan122774/llm_wiki/main/install
 
 ## 五、验证
 
-1. Linux 虚拟机测试 `curl install.sh | bash`，确认应用启动正常
-2. Windows 虚拟机测试 `irm install.ps1 | iex`，确认安装成功
-3. 发布 `v0.5.0` tag，验证 GitHub Release 产物齐全
+1. 打 `v0.5.0` tag，确认 GitHub Release 产物齐全（含 MCP Server）
+2. Linux 虚拟机测试 `curl install.sh | bash`，确认应用启动正常
+3. Windows 虚拟机测试 `irm install.ps1 | iex`，确认安装成功
 4. 给未装过任何依赖的干净系统测试，确认错误提示完整
