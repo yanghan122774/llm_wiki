@@ -38,6 +38,17 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "resources": [
+      "../experience-system/tools/capture_session.py",
+      "../experience-system/config/settings.json",
+      "../experience-system/config/.mcp.json",
+      "../experience-system/skills/xp.md",
+      "../tools/extract_experiences.py",
+      "../mcp-server/dist/src/index.js",
+      "../mcp-server/dist/src/api-client.js",
+      "../mcp-server/node_modules/@modelcontextprotocol/**/*",
+      "../mcp-server/package.json"
     ]
   }
 }

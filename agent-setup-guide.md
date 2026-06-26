@@ -24,12 +24,20 @@
 1. 当前 Claude Code 项目内: 检查目录是否同时包含 package.json、src-tauri/、experience-system/
 2. 用户主目录: ~/work/llm_wiki/
 3. 常见位置: ~/llm_wiki/、/opt/llm_wiki/
-4. 问用户: "llm_wiki 安装在哪个目录?"
+4. 已安装应用模式 — 按平台搜索稳定提取路径 (app_data_dir):
+   - Linux:   ~/.local/share/com.llmwiki.app/
+   - macOS:   ~/Library/Application Support/com.llmwiki.app/
+   - Windows: %APPDATA%/com.llmwiki.app/
+5. 已安装应用模式 — 按平台搜索安装目录 (resource_dir):
+   - Linux deb:       /usr/lib/llm-wiki/
+   - macOS:           /Applications/LLM Wiki.app/Contents/Resources/
+   - Windows MSI/NSIS: C:/Program Files/LLM Wiki/
+6. 问用户: "llm_wiki 安装在哪个目录?"
 ```
 
 找到后记录仓库根目录为 `$WIKI_APP`，部署配件目录为 `$PKG = $WIKI_APP/experience-system/`。
 
-验证清单:
+**验证清单 (源码模式, 步骤 1-3 命中时):**
 - `$WIKI_APP/package.json` 存在
 - `$WIKI_APP/src-tauri/` 存在
 - `$PKG/config/settings.json` 存在
@@ -38,7 +46,11 @@
   cd $WIKI_APP/mcp-server && npm install && npm run build
   ```
 
-> **说明:** `$WIKI_APP` 和 `$PKG` 在同一个 git 仓库中，不需要分别查找。`$PKG` 永远是 `$WIKI_APP/experience-system/`。
+**验证清单 (已安装应用模式, 步骤 4-5 命中时):**
+- `$PKG/tools/capture_session.py` 存在 (注意: 安装模式下路径不含 `../` 回退)
+- `$WIKI_APP/mcp-server/dist/src/index.js` 存在
+
+> **说明:** `$WIKI_APP` 和 `$PKG` 在同一个仓库中，不需要分别查找。`$PKG` 永远是 `$WIKI_APP/experience-system/`。
 
 ---
 
@@ -66,7 +78,7 @@
 
 ```
 当前 Claude Code 工作目录通常就是开发项目根目录。
-问: "你的开发项目在哪个目录? (回车确认当前目录: {cwd})"
+问: "你的开发项目在哪个目录? "
 ```
 
 记录为 `$DEV_PROJECT`。设为当前工作目录的绝对路径。
@@ -114,11 +126,26 @@ cd $WIKI_APP && npm run tauri dev
 
 ## Phase 3 — 配置开发项目
 
-### 3.1 创建目录结构
+### 3.1 创建目录结构 + 检测 Python 命令
 
 ```bash
 mkdir -p $DEV_PROJECT/.claude/skills
 ```
+
+**检测 Python 命令**（不同平台不同——Ubuntu 只有 `python3`，Windows 两者都有）:
+
+```bash
+if command -v python3 &>/dev/null; then
+  PYTHON_CMD="python3"
+elif command -v python &>/dev/null; then
+  PYTHON_CMD="python"
+else
+  echo "ERROR: Python 3 未安装"
+fi
+echo "Python 命令: $PYTHON_CMD"
+```
+
+> 后续所有用到 `python` 的地方都用 `$PYTHON_CMD` 替代。
 
 ### 3.2 复制并填充 settings.json
 
@@ -138,7 +165,51 @@ cp $PKG/config/settings.json $DEV_PROJECT/.claude/settings.json
 
 **关键**: Windows 路径必须用正斜杠 `/` 或双反斜杠 `\\`, 绝不能是单反斜杠 `\`。
 
-替换后验证: `$DEV_PROJECT/.claude/settings.json` 中不能残留任何 `<...>` 占位符。
+### 3.2b 验证 Hook 格式 (重要!)
+
+替换后必须验证 settings.json 是嵌套格式（`matcher` + `hooks` 包装）:
+
+```bash
+python3 -c "
+import json
+with open('$DEV_PROJECT/.claude/settings.json') as f:
+    cfg = json.load(f)
+hooks = cfg['hooks']['SessionEnd']
+for h in hooks:
+    assert 'matcher' in h, 'Hook 缺少 matcher 字段'
+    assert 'hooks' in h and isinstance(h['hooks'], list), 'Hook 缺少嵌套的 hooks 数组'
+    for inner in h['hooks']:
+        assert 'type' in inner, '内层 Hook 缺少 type 字段'
+        assert 'command' in inner, '内层 Hook 缺少 command 字段'
+print('Hook 格式验证通过（嵌套结构）')
+"
+```
+
+### 3.2c 备选：直接写入（模板格式不对时使用）
+
+如果模板验证失败，直接写入 `$DEV_PROJECT/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "SessionEnd": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "$PYTHON_CMD $PKG/tools/capture_session.py --stdin"
+      }]
+    }]
+  },
+  "env": {
+    "LLM_WIKI_PROJECT": "$PROJECT_NAME",
+    "LLM_WIKI_DOMAIN": "$DOMAIN",
+    "LLM_WIKI_ROOT": "$WIKI_APP",
+    "LLM_WIKI_OUTPUT_DIR": "$WIKI_PROJECT/raw/sources/experiences"
+  }
+}
+```
+
+> `$PYTHON_CMD` — 先检测 `python3` 是否存在，不存在则用 `python`。Linux (Ubuntu) 上只有 `python3`。
 
 ### 3.3 写入 CLAUDE.md
 
@@ -212,7 +283,7 @@ cp $PKG/config/settings.json $DEV_PROJECT/.claude/settings.json
 无匹配时继续正常排错, 问题解决后确认是否产生新经验。
 
 ### 手动标记
-- `/exp` — 由 Skill 拦截 (`.claude/skills/exp.md`)，只输出轻量标记，不写文件
+- `xp` — 由 Skill 拦截 (`.claude/skills/xp.md`)，只输出轻量标记，不写文件
 - "提炼经验" / "记录这个坑" — 同样只做标记
 
 标记后的经验会在会话结束时由 Ingest 管线自动生成完整页面。
@@ -276,43 +347,49 @@ cp $PKG/config/settings.json $DEV_PROJECT/.claude/settings.json
 无匹配时继续正常排错, 问题解决后确认是否产生新经验。
 
 ### 手动标记
-- `/exp` — 由 Skill 拦截, 轻量标记
+- `xp` — 由 Skill 拦截, 轻量标记
 - "提炼经验" / "记录这个坑" — 同样只做标记
 ```
 
 ### 3.4 复制 Skill
 
 ```bash
-cp $PKG/skills/exp.md $DEV_PROJECT/.claude/skills/exp.md
+cp $PKG/skills/xp.md $DEV_PROJECT/.claude/skills/xp.md
 ```
 
 ### 3.5 配置 MCP
 
-检查 `C:\Users\<当前用户>\.claude\.mcp.json` 是否存在:
+**先检测 node 的绝对路径**（Claude Code 启动 MCP 子进程时不继承终端 PATH，相对路径可能找不到）:
 
-| 存在? | 操作 |
-|-------|------|
-| ❌ 不存在 | `cp $PKG/config/.mcp.json C:\Users\<用户>\.claude\.mcp.json`, 替换 `<llm_wiki安装目录>` → `$WIKI_APP` |
-| ✅ 存在 | 读内容 → 检查是否已有 `"llm-wiki"` 条目 → 如果没有, 合并进去 |
+```bash
+# Windows PowerShell
+NODE_PATH=$(powershell.exe -Command "Get-Command node -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source" 2>/dev/null)
 
-合并时保持 JSON 完整, `mcpServers` 下加入:
-```json
-"llm-wiki": {
-  "command": "node",
-  "args": ["$WIKI_APP/mcp-server/dist/src/index.js"]
-}
+# Linux / macOS
+if [ -z "$NODE_PATH" ]; then
+  NODE_PATH=$(which node 2>/dev/null || echo "")
+fi
+
+echo "Node 路径: $NODE_PATH"
 ```
 
-### 3.6 询问 SessionEnd Hook 选项
+如果以上都找不到，问用户 `node` 装在哪里。
 
-```
-问: "SessionEnd Hook 要在什么条件下触发?"
-  1) 每次会话结束都触发 (推荐) → matcher 用 ""
-  2) 仅 Git 提交时触发 → matcher 用 "before:gitCommit"
-  3) 仅特定操作后触发 → 告诉我具体条件
+**使用 `claude mcp add` 命令注册 MCP Server**（不要手动编辑 `.mcp.json` — Claude Code 实际配置文件是 `$HOME/.claude.json`，项目级 MCP 配置存储在各项目的 `mcpServers` 字段下）:
+
+```bash
+claude mcp add llm-wiki -- "$NODE_PATH" "$WIKI_APP/mcp-server/dist/src/index.js"
 ```
 
-将用户的选择填入 `$DEV_PROJECT/.claude/settings.json` 的 `hooks.SessionEnd[0].matcher`。
+这会将 `llm-wiki` 添加到当前项目的 MCP 配置中（写入 `$HOME/.claude.json` 的 `projects.<当前项目路径>.mcpServers`）。
+
+> **注意:** Claude Code 不使用 `$HOME/.claude/.mcp.json`。该文件即使存在也不会被读取。始终用 `claude mcp add` 或直接编辑 `$HOME/.claude.json`。
+
+### 3.6 确认 Hook 触发条件
+
+经验系统需要每次会话结束都触发 Hook。SessionEnd 使用标准嵌套格式：`matcher: ""` + `hooks: [...]` 包装（`/doctor` 要求的格式）。`matcher` 为空字符串表示匹配所有操作。
+
+无需询问用户——经验系统永远使用全量捕获。直接跳到 Phase 4。
 
 ---
 
@@ -324,7 +401,7 @@ cp $PKG/skills/exp.md $DEV_PROJECT/.claude/skills/exp.md
 
 ```
 ✅ $DEV_PROJECT/.claude/settings.json
-✅ $DEV_PROJECT/.claude/skills/exp.md
+✅ $DEV_PROJECT/.claude/skills/xp.md
 ✅ $DEV_PROJECT/CLAUDE.md (含经验系统段落)
 ✅ $HOME/.claude/.mcp.json (含 llm-wiki 条目)
 ```
@@ -360,7 +437,7 @@ llm_wiki:   $WIKI_APP
 ━━━━━━━━━━━━━━━━━━━━━━━━
 
 ✅ 所有检查通过。下次 Claude Code 启动时会自动加载经验系统。
-   手动测试: 在对话中输入 /exp 测试一下
+   手动测试: 在对话中输入 xp 测试一下
 ```
 
 ---
@@ -371,7 +448,7 @@ llm_wiki:   $WIKI_APP
 
 | 症状 | 诊断 | 解决 |
 |------|------|------|
-| `/exp` 不识别 | Skill 文件路径不对 | 检查 `.claude/skills/exp.md` 存在且有 YAML frontmatter |
+| `xp` 不识别 | Skill 文件路径不对 | 检查 `.claude/skills/xp.md` 存在且有 YAML frontmatter |
 | MCP 搜索无响应 | llm_wiki 未运行 | 启动 `$WIKI_APP`: `npm run tauri dev` |
 | SessionEnd 无输出 | Hook 路径错误 | 检查 settings.json 中 `command` 路径是否可访问 |
 | 经验未入库 | extract_experiences.py 读取失败 | 查看 `$WIKI_APP/tools/extract_experiences.py` 日志 |
@@ -382,7 +459,7 @@ llm_wiki:   $WIKI_APP
 如果用户想断开经验系统:
 1. 删除 `$DEV_PROJECT/.claude/settings.json` 中的 `hooks.SessionEnd` 段
 2. 删除 `$DEV_PROJECT/.claude/settings.json` 中的 `env` 段
-3. 删除 `$DEV_PROJECT/.claude/skills/exp.md`
+3. 删除 `$DEV_PROJECT/.claude/skills/xp.md`
 4. 从 `$DEV_PROJECT/CLAUDE.md` 中删除「经验系统」段落
 5. (可选) 从 `$HOME/.claude/.mcp.json` 中删除 `llm-wiki` 条目
 

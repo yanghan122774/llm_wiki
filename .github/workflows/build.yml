@@ -85,6 +85,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Build MCP server
+        run: |
+          cd mcp-server
+          npm install
+          npm run build
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -113,7 +119,7 @@ jobs:
       # workflow artifacts so the maintainer can `gh run download`
       # the .msi / .exe / .dmg / .deb to test locally. Skipped on
       # tag pushes since the release page already has them.
-      - name: Upload bundles as workflow artifacts (manual runs only)
+      - name: Upload bundles as workflow artifacts (manual runs only)  
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:

@@ -7,6 +7,8 @@ mod tray;
 mod types;
 
 use panic_guard::run_guarded;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::Manager;
 
@@ -132,6 +134,121 @@ fn tray_available<R: tauri::Runtime>(window: &tauri::Window<R>) -> bool {
         .unwrap_or(false)
 }
 
+/// Copy experience-system files from the bundled resource directory to a
+/// stable, user-writable location on first run. This is essential for:
+/// - AppImage (resource_dir is a random mount point each run)
+/// - Windows MSI (Program Files may be read-only for non-admin users)
+/// - Version upgrades (re-extract when the app version changes)
+fn extract_experience_system_on_first_run(resource_dir: &Path, data_dir: &Path) {
+    let marker = data_dir.join("experience-system").join(".extracted");
+    let current_version = env!("CARGO_PKG_VERSION");
+
+    // Skip if already extracted with the current version
+    if let Ok(stored) = fs::read_to_string(&marker) {
+        if stored.trim() == current_version {
+            return;
+        }
+    }
+
+    // Files to extract: (src_relative_path, dest_parent_relative_to_data_dir)
+    let entries: &[(&str, &str)] = &[
+        (
+            "experience-system/tools/capture_session.py",
+            "experience-system/tools",
+        ),
+        (
+            "experience-system/config/settings.json",
+            "experience-system/config",
+        ),
+        (
+            "experience-system/config/.mcp.json",
+            "experience-system/config",
+        ),
+        (
+            "experience-system/skills/xp.md",
+            "experience-system/skills",
+        ),
+        ("tools/extract_experiences.py", "tools"),
+        ("mcp-server/dist/src/index.js", "mcp-server/dist/src"),
+        ("mcp-server/dist/src/api-client.js", "mcp-server/dist/src"),
+        ("mcp-server/package.json", "mcp-server"),
+    ];
+
+    let mut copied = 0usize;
+
+    // Also copy the mcp-server node_modules directory recursively
+    let node_modules_src = resource_dir.join("mcp-server").join("node_modules");
+    let node_modules_dest = data_dir.join("mcp-server").join("node_modules");
+    if node_modules_src.is_dir() {
+        if let Err(e) = copy_dir_recursive(&node_modules_src, &node_modules_dest) {
+            eprintln!(
+                "[setup] Failed to copy MCP node_modules: {e} (src={})",
+                node_modules_src.display()
+            );
+        }
+    }
+
+    for (src_rel, dest_parent_rel) in entries {
+        let src = resource_dir.join(src_rel);
+        if !src.exists() {
+            eprintln!("[setup] Resource not found, skipping: {}", src.display());
+            continue;
+        }
+        let dest_dir = data_dir.join(dest_parent_rel);
+        if let Err(e) = fs::create_dir_all(&dest_dir) {
+            eprintln!(
+                "[setup] Failed to create dir {}: {e}",
+                dest_dir.display()
+            );
+            continue;
+        }
+        let dest = data_dir.join(src_rel);
+        if let Err(e) = fs::copy(&src, &dest) {
+            eprintln!(
+                "[setup] Failed to copy {} → {}: {e}",
+                src.display(),
+                dest.display()
+            );
+        } else {
+            copied += 1;
+        }
+    }
+
+    // Write marker atomically: temp file + rename
+    if let Some(parent) = marker.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let tmp = data_dir.join(".extracted-tmp");
+    if fs::write(&tmp, current_version).is_ok() {
+        let _ = fs::rename(&tmp, &marker);
+    }
+
+    eprintln!(
+        "[setup] Experience system extracted: {copied}/{} files → {}",
+        entries.len(),
+        data_dir.display()
+    );
+}
+
+/// Recursively copy a directory tree.
+fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<(), std::io::Error> {
+    if !src.is_dir() {
+        return Ok(());
+    }
+    fs::create_dir_all(dest)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let dest_path = dest.join(entry.file_name());
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            copy_dir_recursive(&entry.path(), &dest_path)?;
+        } else if file_type.is_file() {
+            fs::copy(entry.path(), &dest_path)?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     clip_server::start_clip_server();
@@ -170,6 +287,14 @@ pub fn run() {
                     eprintln!("[proxy] {summary}");
                 } else {
                     eprintln!("[proxy] no proxyConfig in store, requests go direct");
+                }
+
+                // First-run: extract experience-system files from bundled
+                // resources to a stable writable location so users can
+                // reference them in Claude Code config (critical for AppImage
+                // where resource_dir is a random mount point).
+                if let Ok(resource_dir) = app.path().resource_dir() {
+                    extract_experience_system_on_first_run(&resource_dir, &dir);
                 }
             } else {
                 eprintln!("[proxy] could not resolve app_data_dir");

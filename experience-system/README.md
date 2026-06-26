@@ -17,7 +17,7 @@
 | 组件 | 已包含？ | 说明 |
 |------|---------|------|
 | llm_wiki 应用 | ✅ 本仓库根目录 | 知识库管理桌面应用（Tauri + React），提供 API + Ingest 管线 |
-| 部署配置 | ✅ 本包 `config/` `tools/` `skills/` | SessionEnd Hook、/exp Skill、经验提取脚本 |
+| 部署配置 | ✅ 本包 `config/` `tools/` `skills/` | SessionEnd Hook、xp Skill、经验提取脚本 |
 | Claude Code | ❌ 需自行安装 | AI 编程助手 |
 
 ---
@@ -65,7 +65,7 @@ npm run tauri dev
 ```
 本包/config/settings.json  →  <开发项目>/.claude/settings.json
 本包/config/.mcp.json      →  C:\Users\<你的用户名>\.claude\.mcp.json  （全局 MCP 配置）
-本包/skills/exp.md         →  <开发项目>/.claude/skills/exp.md
+本包/skillsxp.md         →  <开发项目>/.claude/skillsxp.md
 ```
 
 然后修改 `settings.json` 中的占位符：
@@ -110,7 +110,7 @@ llm_wiki/                         ← 仓库根目录
 │   │   ├── settings.json         # SessionEnd Hook + 环境变量
 │   │   └── .mcp.json             # MCP Server 配置
 │   ├── skills/                   ← Skill 文件
-│   │   └── exp.md                # /exp 手动标记经验
+│   │   └── exp.md                # xp 手动标记经验
 │   ├── tools/                    ← 工具脚本（Hook 入口）
 │   │   └── capture_session.py    # SessionEnd Hook 入口
 │   └── wiki-template/            ← Wiki 项目模板
@@ -135,7 +135,7 @@ llm_wiki/                         ← 仓库根目录
 
 ### 手动标记
 ```
-/exp 刚才那个 xxx 的坑
+xp 刚才那个 xxx 的坑
 ```
 只输出几行标记，不打断工作，会话结束后自动入库。
 
@@ -163,7 +163,7 @@ Hook 自动触发：transcript → 提取经验 → wiki 页面生成 → 向量
 Claude Code 会话
   │
   ├─ CLAUDE.md 规则 → 会话中自动搜索 MCP
-  ├─ /exp Skill → 轻量标记
+  ├─ xp Skill → 轻量标记
   └─ SessionEnd Hook → capture_session.py
         │
         ▼
@@ -192,8 +192,8 @@ Claude Code 会话
 **Q: 经验质量不好怎么办？**
 可在 llm_wiki 中直接编辑或删除页面。Ingest 管线有三层校验（prompt引导+schema约束+去重）。
 
-**Q: /exp 和自动提取有什么区别？**
-`/exp` 是你主动标记"这个重要"，自动提取是 SessionEnd 全量分析 transcript。两者互补。
+**Q: xp 和自动提取有什么区别？**
+`xp` 是你主动标记"这个重要"，自动提取是 SessionEnd 全量分析 transcript。两者互补。
 
 **Q: 导入文件后只存到 Source，没生成 wiki 页面？**
 检查两点：

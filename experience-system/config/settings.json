@@ -4,7 +4,7 @@
       "matcher": "",
       "hooks": [{
         "type": "command",
-        "command": "python <experience-system>/tools/capture_session.py --stdin"
+        "command": "python3 <experience-system>/tools/capture_session.py --stdin"
       }]
     }]
   },

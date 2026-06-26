@@ -1,4 +1,10 @@
 {
+  // Windows 用户注意: Claude Code 启动 MCP 时不继承终端 PATH，
+  // "command": "node" 可能找不到。建议用 node 的绝对路径替换:
+  //   Windows: "D:/Program Files/node.exe"
+  //   Linux:   "/usr/bin/node"
+  //   macOS:   "/opt/homebrew/bin/node"
+  // 在终端执行: where node (Windows) / which node (Linux/macOS)
   "mcpServers": {
     "llm-wiki": {
       "command": "node",

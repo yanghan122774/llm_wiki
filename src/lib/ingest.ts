@@ -995,6 +995,16 @@ async function autoIngestImpl(
   const writeWarnings = writeResult.warnings
   const hardFailures = writeResult.hardFailures
 
+  // ── Dangling wikilink check ────────────────────────────────────
+  // The LLM sometimes generates index/log entries that reference
+  // experience pages it never actually created (common with weaker
+  // models on experience-extraction tasks). Surface these as
+  // warnings so the user knows pages are missing.
+  if (sourceIsExperience && writtenPaths.length > 0 && !signal?.aborted) {
+    const danglingWarnings = await detectDanglingWikilinks(pp, writtenPaths)
+    writeWarnings.push(...danglingWarnings)
+  }
+
   const aggregateRepairPaths = aggregatePathsNeedingRepair(writtenPaths, writeWarnings)
   const repairableAggregatePaths = aggregateRepairPaths.filter((path) =>
     isAggregateRepairSafe(path, index, overview, llmConfig.maxContextSize),
@@ -1297,6 +1307,89 @@ function isAggregateRepairSafe(
   if (path === "wiki/index.md") return index.length <= cap
   if (path === "wiki/overview.md") return overview.length <= cap
   return true
+}
+
+/**
+ * After experience extraction, check that wikilinks referenced in
+ * index.md / log.md actually resolve to files that were written (or
+ * already existed on disk). Returns human-readable warnings for any
+ * dangling references, which the caller merges into the activity log.
+ *
+ * This catches the common failure mode where a weaker LLM faithfully
+ * lists experiences in the index but forgets to emit the corresponding
+ * FILE blocks — the user sees "9 bugs in index, 0 in wiki/bugs/"
+ * unless we flag it.
+ */
+async function detectDanglingWikilinks(
+  projectPath: string,
+  writtenPaths: string[],
+): Promise<string[]> {
+  const warnings: string[] = []
+  const pp = normalizePath(projectPath)
+
+  // Collect every wikilink slug from the newly written index / log.
+  // Matches [[slug]] and [[slug|label]] variants.
+  const wikilinkRe = /\[\[([^\]|#]+)(?:[^\]\n]*)?\]\]/g
+  const referencedSlugs = new Set<string>()
+
+  for (const wpath of writtenPaths) {
+    if (wpath !== "wiki/index.md" && wpath !== "wiki/log.md") continue
+    let content = ""
+    try {
+      content = await readFile(`${pp}/${wpath}`)
+    } catch {
+      continue
+    }
+    for (const match of content.matchAll(wikilinkRe)) {
+      referencedSlugs.add(match[1].trim())
+    }
+  }
+
+  if (referencedSlugs.size === 0) return warnings
+
+  // Build the set of files that exist: written this run OR already on disk.
+  const existingFileSet = new Set(writtenPaths.map((p) => normalizePath(p)))
+
+  // Experience page directories to check against each slug.
+  const expDirs = [
+    "wiki/bugs",
+    "wiki/decisions",
+    "wiki/howto",
+    "wiki/agent-errors",
+    "wiki/patterns",
+    "wiki/templates",
+  ]
+
+  for (const slug of referencedSlugs) {
+    // Check whether any matching file already exists (in written set
+    // or on disk under any experience directory).
+    let found = false
+    for (const dir of expDirs) {
+      const candidate = `${dir}/${slug}.md`
+      if (existingFileSet.has(candidate)) {
+        found = true
+        break
+      }
+      // Also check disk for pre-existing pages from a previous ingest.
+      try {
+        if (await fileExists(`${pp}/${candidate}`)) {
+          existingFileSet.add(candidate) // remember for subsequent slugs
+          found = true
+          break
+        }
+      } catch {
+        // fileExists throws on some platforms for permission errors —
+        // treat as "not found" and keep scanning.
+      }
+    }
+    if (!found) {
+      warnings.push(
+        `Dangling wikilink: index/log references [[${slug}]] but no corresponding wiki page was generated or found on disk. The LLM may have skipped creating this experience page.`,
+      )
+    }
+  }
+
+  return warnings
 }
 
 function canonicalizeSourcesField(content: string, sourceIdentity: string): string {
@@ -1904,11 +1997,15 @@ export function buildGenerationPrompt(
     "",
     isExperience
       ? [
-          "## What to generate",
+          "## What to generate — EXPERIENCE EXTRACTION (this task type is different from source ingestion)",
           "",
           "This is a PROJECT EXPERIENCE extraction task. The source is a development",
-          "session transcript. Generate ONE FILE block PER experience found.",
-          "Do NOT create a source summary page. The transcript itself IS the source.",
+          "session transcript. You MUST emit output in TWO phases, in this exact order:",
+          "",
+          "### PHASE A (MANDATORY — emit FIRST, before any aggregate pages)",
+          "",
+          "Generate ONE FILE block PER experience found. Every distinct bug, decision,",
+          "how-to, agent-error, pattern, or template gets its own FILE block.",
           "",
           "1. **bug** pages → wiki/bugs/<slug>.md",
           "   Structure: ## 现象 → ## 根因 → ## 解决方案 → ## 预防措施",
@@ -1927,8 +2024,42 @@ export function buildGenerationPrompt(
           'If the source contains [EXP] markers, generate those pages FIRST —',
           'they were manually flagged by the user. Use the type/title/keywords/note',
           'from the marker as a starting point, enriched with full transcript context.',
-          "If the analysis has NO extractable experiences, output only a single",
-          "FILE block containing the word NO_EXPERIENCES as its content.",
+          "",
+          "### PHASE B (emit LAST, AFTER all Phase A FILE blocks)",
+          "",
+          "After ALL individual experience pages have been emitted, then emit:",
+          "",
+          "7. An updated wiki/index.md — add new entries to existing categories,",
+          "   preserve all existing entries. CRITICAL: every [[wikilink]] in this file",
+          "   MUST already have its corresponding FILE block emitted in Phase A.",
+          "   If you reference a page in the index, you MUST have created it first.",
+          "8. An updated wiki/log.md — append new entries using this format:",
+          "   ```",
+          "   ## YYYY-MM-DD",
+          "   ",
+          "   **Session:** <one-line summary of what this session accomplished>",
+          "   ",
+          "   - Fixed [[bug-slug]] — <one-line resolution>",
+          "   - New [[page-slug]] — <one-line description>",
+          "   - Linked [[bug-slug]] → pattern — <why this strengthens the pattern>",
+          "   ```",
+          "   Prefix rules: Fixed=resolved bug, New=new page created, Linked=bug→pattern,",
+          "   Updated=content changed, Deprecated=decision obsolete.",
+          "   Always use [[wikilink]] syntax. Only list pages generated/changed THIS session.",
+          "9. An updated wiki/overview.md — a high-level summary of what the entire wiki",
+          "   covers, updated to reflect the newly ingested experiences.",
+          "",
+          "### OUTPUT ORDER (STRICT — deviations cause missing pages)",
+          "",
+          "Your response MUST follow this exact sequence:",
+          "1. Phase A FILE blocks (bug → decision → howto → agent-error → pattern → template)",
+          "2. Phase B FILE blocks (index → log → overview)",
+          "",
+          "NEVER emit an index that references pages you haven't created. If you have",
+          "nothing to put in the index, skip the index — but NEVER fabricate wikilinks.",
+          "",
+          "If the analysis has NO extractable experiences: output only a single",
+          "FILE block with the exact path `wiki/empty.md` and content NO_EXPERIENCES.",
         ].join("\n")
       : [
           "## What to generate",
