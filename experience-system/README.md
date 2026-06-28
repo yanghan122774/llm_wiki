@@ -65,7 +65,7 @@ npm run tauri dev
 ```
 本包/config/settings.json  →  <开发项目>/.claude/settings.json
 本包/config/.mcp.json      →  C:\Users\<你的用户名>\.claude\.mcp.json  （全局 MCP 配置）
-本包/skillsxp.md         →  <开发项目>/.claude/skillsxp.md
+本包/skills/xp.md         →  <开发项目>/.claude/skills/xp.md
 ```
 
 然后修改 `settings.json` 中的占位符：

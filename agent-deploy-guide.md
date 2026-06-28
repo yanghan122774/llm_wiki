@@ -255,7 +255,7 @@ mkdir -p $WIKI_PROJECT/raw/sources/experiences
 ### 4.4 复制 Skill
 
 ```bash
-cp $WIKI_APP/experience-system/skillsxp.md $DEV_PROJECT/.claude/skillsxp.md
+cp $WIKI_APP/experience-system/skills/xp.md $DEV_PROJECT/.claude/skills/xp.md
 ```
 
 ### 4.5 验证 settings.json
@@ -461,7 +461,7 @@ echo "Node 绝对路径: $NODE_PATH"
 
 ```
 ✅ $DEV_PROJECT/.claude/settings.json
-✅ $DEV_PROJECT/.claude/skillsxp.md
+✅ $DEV_PROJECT/.claude/skills/xp.md
 ✅ $DEV_PROJECT/CLAUDE.md (含经验系统段落)
 ✅ $WIKI_PROJECT/raw/sources/experiences/ (输出目录)
 ```
@@ -645,7 +645,7 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf protobuf-com
 
 如果用户想断开经验系统:
 1. 删除 `$DEV_PROJECT/.claude/settings.json` 中的 `hooks.SessionEnd` 和 `env` 段
-2. 删除 `$DEV_PROJECT/.claude/skillsxp.md`
+2. 删除 `$DEV_PROJECT/.claude/skills/xp.md`
 3. 从 `$DEV_PROJECT/CLAUDE.md` 中删除「经验系统」段落
 4. (可选) 从 `$HOME/.claude/.mcp.json` 中删除 `llm-wiki` 条目
 
