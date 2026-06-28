@@ -79,15 +79,8 @@ if [ "$HAS_GUI" -eq 1 ] && [ "$GLIBC_OK" -eq 1 ]; then
 fi
 
 if [ -z "$URL" ]; then
-  # Fall back to .deb. If the system is too old for AppImage
-  # (GLIBC < 2.32), pick the ubuntu-20.04 compat build which
-  # depends on libwebkit2gtk-4.0-37 instead of 4.1.
-  if [ "$GLIBC_OK" -eq 0 ]; then
-    URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url": "[^"]*ubuntu-20.04[^"]*\.deb"' | head -1 | cut -d'"' -f4)
-  fi
-  if [ -z "$URL" ]; then
-    URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url": "[^"]*'"$DEB_ARCH"'[^"]*\.deb"' | grep -v 'ubuntu-20.04' | head -1 | cut -d'"' -f4)
-  fi
+  # Fall back to .deb
+  URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url": "[^"]*'"$DEB_ARCH"'[^"]*\.deb"' | head -1 | cut -d'"' -f4)
   PKG_TYPE="deb"
 fi
 
