@@ -56,7 +56,7 @@ npm run tauri dev
 
 **推荐方式 — Agent 自动配置：**
 
-把仓库根目录的 `docs/superpowers/agent-setup-guide.md` 发给 Claude Code，它会引导你按步骤完成所有配置（收集信息、写入 CLAUDE.md、配置 Hook、验证 MCP 连通性）。
+把仓库根目录的 `agent-deploy-guide.md` 发给 Claude Code，它会引导你按步骤完成所有配置（收集信息、写入 CLAUDE.md、配置 Hook、验证 MCP 连通性）。
 
 **手动方式：**
 
@@ -78,7 +78,7 @@ npm run tauri dev
 | `<你的wiki项目>` | Step 2 创建的 wiki 项目路径 |
 | `<experience-system>` | 本部署包的路径，如 `D:/work/experience-system` |
 
-CLAUDE.md 由 Agent 按 `agent-setup-guide.md` Phase 3.3 自动生成，无需手动复制。
+CLAUDE.md 由 Agent 按 `agent-deploy-guide.md` Phase 3.3 自动生成，无需手动复制。
 
 ### Step 4：配置全局 MCP
 
@@ -102,7 +102,8 @@ llm_wiki/                         ← 仓库根目录
 ├── src-tauri/                    # Rust 后端 (Tauri commands)
 ├── mcp-server/                   # MCP Server (Node.js)
 ├── tools/                        # extract_experiences.py
-├── docs/                         # 设计文档 + agent-setup-guide.md
+├── docs/                         # 设计文档
+├── agent-deploy-guide.md         # Agent 自动部署指南
 ├── package.json                  # npm install 入口
 ├── experience-system/            ← 本目录（部署配件）
 │   ├── README.md                 ← 你正在读的文件
@@ -201,4 +202,4 @@ Claude Code 会话
 2. 超长会话（transcript > 100KB）可能导致 LLM 输出 token 不够用，只生成索引不生成页面。解决：拆成多次小会话，或给 LLM 配更大的 `maxContextSize`。
 
 **Q: 如何快速自动配置？**
-把 `agent-setup-guide.md`（本包根目录）给 Claude Code 读，它会按步骤引导配置。不需要手动填占位符。
+把 `agent-deploy-guide.md`（本包根目录）给 Claude Code 读，它会按步骤引导配置。不需要手动填占位符。

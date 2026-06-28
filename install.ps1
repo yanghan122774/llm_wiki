@@ -114,5 +114,5 @@ if ($ExitCode -eq 0 -or $ExitCode -eq 3010) {
 Remove-Item $Installer -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "  下一步: 将 agent-setup-guide.md 发给 Claude Code 完成知识库配置" -ForegroundColor Gray
+Write-Host "  下一步: 将 agent-deploy-guide.md 发给 Claude Code 完成知识库配置" -ForegroundColor Gray
 

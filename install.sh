@@ -190,4 +190,4 @@ else
 fi
 
 echo ""
-echo -e "下一步: 将 ${CYAN}agent-setup-guide.md${NC} 发给 Claude Code 完成知识库配置"
+echo -e "下一步: 将 ${CYAN}agent-deploy-guide.md${NC} 发给 Claude Code 完成知识库配置"
