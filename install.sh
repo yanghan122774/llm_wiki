@@ -190,4 +190,17 @@ else
 fi
 
 echo ""
-echo -e "下一步: 将 ${CYAN}agent-deploy-guide.md${NC} 发给 Claude Code 完成知识库配置"
+echo "  正在下载文档..."
+DOC_DIR="$HOME/.llm-wiki"
+mkdir -p "$DOC_DIR"
+# Download deployment docs from the repo raw content.
+# These are plain Markdown files (~10 KB each).
+DOCS="agent-deploy-guide.md 部署指南.md 使用手册-经验系统.md"
+for doc in $DOCS; do
+  curl -fsSL -o "$DOC_DIR/$doc" \
+    "https://raw.githubusercontent.com/$REPO/main/$doc" 2>/dev/null || true
+done
+echo -e "  文档已保存到: ${GREEN}$DOC_DIR${NC}"
+
+echo ""
+echo -e "下一步: 将 ${CYAN}$DOC_DIR/agent-deploy-guide.md${NC} 发给 Claude Code 完成知识库配置"
